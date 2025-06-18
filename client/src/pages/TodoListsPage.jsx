@@ -49,54 +49,75 @@ export default function TodoListsPage() {
   const startIndex = currentPage * listsPerPage;
   const visibleLists = lists.slice(startIndex, startIndex + listsPerPage);
 
-  // FIXED: Proper drag end handler
+  // Handle drag end for both lists and subtasks
   const onDragEnd = (result) => {
-    // If dropped outside the list or no destination
-    if (!result.destination) {
-      return;
-    }
+    if (!result.destination) return;
 
-    // Get the source and destination indices (these are relative to visibleLists)
-    const sourceIndex = result.source.index;
-    const destinationIndex = result.destination.index;
+    const { source, destination, type } = result;
 
-    // Convert to global indices in the full lists array
-    const sourceGlobalIndex = startIndex + sourceIndex;
-    const destinationGlobalIndex = startIndex + destinationIndex;
+    if (type === 'list') {
+      // Handle list reordering
+      const sourceIndex = source.index;
+      const destinationIndex = destination.index;
+      const sourceGlobalIndex = startIndex + sourceIndex;
+      const destinationGlobalIndex = startIndex + destinationIndex;
 
-    // Create a new array and move the item
-    const newLists = Array.from(lists);
-    const [movedItem] = newLists.splice(sourceGlobalIndex, 1);
-    newLists.splice(destinationGlobalIndex, 0, movedItem);
+      const newLists = Array.from(lists);
+      const [movedItem] = newLists.splice(sourceGlobalIndex, 1);
+      newLists.splice(destinationGlobalIndex, 0, movedItem);
 
-    // Update subtasks mapping to follow the moved items
-    const newSubtasks = {};
-    Object.keys(subtasks).forEach(key => {
-      const oldIndex = parseInt(key);
-      let newIndex = oldIndex;
-      
-      // Adjust indices based on the move
-      if (oldIndex === sourceGlobalIndex) {
-        newIndex = destinationGlobalIndex;
-      } else if (sourceGlobalIndex < destinationGlobalIndex) {
-        // Moving item forward
-        if (oldIndex > sourceGlobalIndex && oldIndex <= destinationGlobalIndex) {
-          newIndex = oldIndex - 1;
+      // Update subtasks mapping
+      const newSubtasks = {};
+      Object.keys(subtasks).forEach(key => {
+        const oldIndex = parseInt(key);
+        let newIndex = oldIndex;
+        
+        if (oldIndex === sourceGlobalIndex) {
+          newIndex = destinationGlobalIndex;
+        } else if (sourceGlobalIndex < destinationGlobalIndex) {
+          if (oldIndex > sourceGlobalIndex && oldIndex <= destinationGlobalIndex) {
+            newIndex = oldIndex - 1;
+          }
+        } else {
+          if (oldIndex >= destinationGlobalIndex && oldIndex < sourceGlobalIndex) {
+            newIndex = oldIndex + 1;
+          }
         }
+        
+        if (subtasks[oldIndex]) {
+          newSubtasks[newIndex] = subtasks[oldIndex];
+        }
+      });
+      
+      setLists(newLists);
+      setSubtasks(newSubtasks);
+    } else if (type === 'subtask') {
+      // Handle subtask reordering/moving between lists
+      const sourceListId = parseInt(source.droppableId.replace('subtasks-', ''));
+      const destListId = parseInt(destination.droppableId.replace('subtasks-', ''));
+      
+      const newSubtasks = { ...subtasks };
+      
+      if (sourceListId === destListId) {
+        // Reordering within the same list
+        const listSubtasks = Array.from(newSubtasks[sourceListId] || []);
+        const [movedSubtask] = listSubtasks.splice(source.index, 1);
+        listSubtasks.splice(destination.index, 0, movedSubtask);
+        newSubtasks[sourceListId] = listSubtasks;
       } else {
-        // Moving item backward
-        if (oldIndex >= destinationGlobalIndex && oldIndex < sourceGlobalIndex) {
-          newIndex = oldIndex + 1;
-        }
+        // Moving between different lists
+        const sourceSubtasks = Array.from(newSubtasks[sourceListId] || []);
+        const destSubtasks = Array.from(newSubtasks[destListId] || []);
+        
+        const [movedSubtask] = sourceSubtasks.splice(source.index, 1);
+        destSubtasks.splice(destination.index, 0, movedSubtask);
+        
+        newSubtasks[sourceListId] = sourceSubtasks;
+        newSubtasks[destListId] = destSubtasks;
       }
       
-      if (subtasks[oldIndex]) {
-        newSubtasks[newIndex] = subtasks[oldIndex];
-      }
-    });
-    
-    setLists(newLists);
-    setSubtasks(newSubtasks);
+      setSubtasks(newSubtasks);
+    }
   };
 
   const addList = () => {
@@ -160,40 +181,26 @@ export default function TodoListsPage() {
     exit: (dir) => ({ x: dir > 0 ? -1000 : 1000, opacity: 0 }),
   };
 
-  const cardVariants = {
-    initial: { opacity: 1, x: 0 },
-    exit: {
-      opacity: 0,
-      x: -100,
-      transition: { duration: 0.4, ease: "easeInOut" },
-    },
-  };
-
   const handleDelete = () => {
     const { index, name } = listToDelete;
     const newList = [...lists];
     newList.splice(index, 1);
     setLists(newList);
     
-    // Also remove subtasks for this list and adjust indices
     setSubtasks(prev => {
       const newSubtasks = {};
       Object.keys(prev).forEach(key => {
         const oldIndex = parseInt(key);
         if (oldIndex < index) {
-          // Keep items before deleted index
           newSubtasks[oldIndex] = prev[oldIndex];
         } else if (oldIndex > index) {
-          // Shift items after deleted index
           newSubtasks[oldIndex - 1] = prev[oldIndex];
         }
-        // Skip the deleted index
       });
       return newSubtasks;
     });
     
     setShowDeleteModal(false);
-
     setLastDeleted({ name, index });
     clearTimeout(undoTimeoutRef.current);
 
@@ -254,7 +261,7 @@ export default function TodoListsPage() {
             className="w-full"
           >
             <DragDropContext onDragEnd={onDragEnd}>
-              <Droppable droppableId="lists" direction="horizontal">
+              <Droppable droppableId="lists" direction="horizontal" type="list">
                 {(provided) => (
                   <div
                     className="grid grid-cols-5 gap-6 w-full"
@@ -269,14 +276,14 @@ export default function TodoListsPage() {
                       return (
                         <Draggable
                           key={`${listName}-${globalIndex}`}
-                          draggableId={`${listName}-${globalIndex}`}
+                          draggableId={`list-${globalIndex}`}
                           index={index}
+                          type="list"
                         >
                           {(provided, snapshot) => (
                             <div
                               ref={provided.innerRef}
                               {...provided.draggableProps}
-                              {...provided.dragHandleProps}
                               onClick={() => setSelectedIndex(globalIndex)}
                               className={`relative h-[80vh] cursor-pointer rounded-2xl transition-all duration-300 group
                                 ${
@@ -285,8 +292,14 @@ export default function TodoListsPage() {
                                     : "border border-transparent"
                                 }
                                 hover:border-[2px] hover:border-transparent hover:bg-gradient-to-r hover:from-blue-500 hover:to-purple-500 hover:bg-origin-border
-                                ${snapshot.isDragging ? "shadow-2xl scale-105 rotate-2 z-50" : ""}
+                                ${snapshot.isDragging ? "shadow-2xl scale-105 z-50" : ""}
                               `}
+                              style={{
+                                ...provided.draggableProps.style,
+                                transform: snapshot.isDragging 
+                                  ? `${provided.draggableProps.style?.transform} rotate(2deg)` 
+                                  : provided.draggableProps.style?.transform
+                              }}
                             >
                               {/* Delete Icon (hover only) */}
                               <div
@@ -305,83 +318,155 @@ export default function TodoListsPage() {
                                 ✖
                               </div>
 
-                              <div className="h-full w-full rounded-[1rem] bg-[#334155] p-4 flex flex-col">
-                                {/* Header section with title and progress */}
-                                <div className="flex-shrink-0">
-                                  <h3 className="text-xl font-semibold mb-2 text-white">
+                              <div className="h-full w-full rounded-[1rem] bg-[#334155] p-4 flex flex-col overflow-hidden">
+                                {/* Header section with drag handle */}
+                                <div className="flex-shrink-0 flex items-center gap-2 mb-2">
+                                  {/* Drag Handle - Only this area allows dragging */}
+                                  <div
+                                    {...provided.dragHandleProps}
+                                    className="cursor-grab active:cursor-grabbing p-1 rounded hover:bg-gray-600 transition-colors"
+                                    title="Drag to reorder list"
+                                  >
+                                    <svg
+                                      width="16"
+                                      height="16"
+                                      viewBox="0 0 24 24"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      strokeWidth="2"
+                                      className="text-gray-400"
+                                    >
+                                      <path d="M9 3h6v6H9zM9 15h6v6H9z"/>
+                                      <path d="M3 9h6v6H3zM15 9h6v6h-6z"/>
+                                    </svg>
+                                  </div>
+                                  
+                                  <h3 className="text-xl font-semibold text-white flex-1">
                                     {listName}
                                   </h3>
-                                  
-                                  {/* Progress indicator */}
-                                  {listSubtasks.length > 0 && (
-                                    <div className="mb-3">
-                                      <div className="text-sm text-gray-300 mb-1">
-                                        {completedCount}/{listSubtasks.length} completed
-                                      </div>
-                                      <div className="w-full bg-gray-600 rounded-full h-2">
-                                        <div 
-                                          className="bg-gradient-to-r from-blue-500 to-purple-500 h-2 rounded-full transition-all duration-300"
-                                          style={{ width: `${listSubtasks.length > 0 ? (completedCount / listSubtasks.length) * 100 : 0}%` }}
-                                        ></div>
-                                      </div>
-                                    </div>
-                                  )}
                                 </div>
+                                
+                                {/* Progress indicator */}
+                                {listSubtasks.length > 0 && (
+                                  <div className="mb-3 flex-shrink-0">
+                                    <div className="text-sm text-gray-300 mb-1">
+                                      {completedCount}/{listSubtasks.length} completed
+                                    </div>
+                                    <div className="w-full bg-gray-600 rounded-full h-2">
+                                      <div 
+                                        className="bg-gradient-to-r from-blue-500 to-purple-500 h-2 rounded-full transition-all duration-300"
+                                        style={{ width: `${listSubtasks.length > 0 ? (completedCount / listSubtasks.length) * 100 : 0}%` }}
+                                      ></div>
+                                    </div>
+                                  </div>
+                                )}
 
-                                {/* Subtasks list - Now takes up all available space */}
-                                <div className="flex-1 space-y-2 overflow-y-auto mb-3">
-                                  {listSubtasks.map((subtask) => (
-                                    <div
-                                      key={subtask.id}
-                                      className={`p-3 rounded-lg bg-[#475569] flex items-start justify-between group/subtask
-                                        ${subtask.completed ? 'opacity-60' : ''}`}
-                                      onClick={(e) => e.stopPropagation()}
-                                    >
-                                      <div className="flex items-start gap-3 flex-1">
-                                        <input
-                                          type="checkbox"
-                                          checked={subtask.completed}
-                                          onChange={() => toggleSubtaskComplete(globalIndex, subtask.id)}
-                                          className="mt-1 accent-blue-500 w-4 h-4"
-                                        />
-                                        <div className="flex-1">
-                                          <div className={`text-base font-medium ${subtask.completed ? 'line-through text-gray-400' : 'text-white'}`}>
-                                            {subtask.name}
-                                          </div>
-                                          {subtask.deadline && (
-                                            <div className={`text-sm mt-1 ${
-                                              isOverdue(subtask.deadline) && !subtask.completed
-                                                ? 'text-red-400'
-                                                : 'text-gray-400'
-                                            }`}>
-                                              Due: {formatDate(subtask.deadline)}
-                                            </div>
-                                          )}
-                                        </div>
-                                      </div>
-                                      <button
-                                        onClick={() => deleteSubtask(globalIndex, subtask.id)}
-                                        className="opacity-0 group-hover/subtask:opacity-100 text-red-600 hover:text-red-500 text-sm ml-2 transition-colors duration-200"
-                                        title="Delete subtask"
+                                {/* Subtasks list with drag and drop */}
+                                <div className="flex-1 min-h-0 overflow-hidden">
+                                  <Droppable droppableId={`subtasks-${globalIndex}`} type="subtask">
+                                    {(provided, snapshot) => (
+                                      <div
+                                        ref={provided.innerRef}
+                                        {...provided.droppableProps}
+                                        className={`space-y-2 h-full overflow-y-auto transition-colors duration-200 ${
+                                          snapshot.isDraggingOver ? 'bg-blue-500/10 rounded-lg p-1' : ''
+                                        }`}
                                       >
-                                        ✖
-                                      </button>
-                                    </div>
-                                  ))}
+                                        {listSubtasks.map((subtask, subtaskIndex) => (
+                                          <Draggable
+                                            key={subtask.id}
+                                            draggableId={`subtask-${subtask.id}`}
+                                            index={subtaskIndex}
+                                            type="subtask"
+                                          >
+                                            {(provided, snapshot) => (
+                                              <div
+                                                ref={provided.innerRef}
+                                                {...provided.draggableProps}
+                                                className={`p-3 rounded-lg bg-[#475569] flex items-start justify-between group/subtask transition-all duration-200
+                                                  ${subtask.completed ? 'opacity-60' : ''}
+                                                  ${snapshot.isDragging ? 'shadow-lg scale-105 z-50' : ''}
+                                                `}
+                                                onClick={(e) => e.stopPropagation()}
+                                                style={{
+                                                  ...provided.draggableProps.style,
+                                                  transform: snapshot.isDragging 
+                                                    ? `${provided.draggableProps.style?.transform} rotate(1deg)` 
+                                                    : provided.draggableProps.style?.transform
+                                                }}
+                                              >
+                                                <div className="flex items-start gap-3 flex-1">
+                                                  {/* Subtask drag handle */}
+                                                  <div
+                                                    {...provided.dragHandleProps}
+                                                    className="cursor-grab active:cursor-grabbing p-1 rounded hover:bg-gray-600 transition-colors opacity-0 group-hover/subtask:opacity-100"
+                                                    title="Drag to reorder or move to another list"
+                                                  >
+                                                    <svg
+                                                      width="12"
+                                                      height="12"
+                                                      viewBox="0 0 24 24"
+                                                      fill="none"
+                                                      stroke="currentColor"
+                                                      strokeWidth="2"
+                                                      className="text-gray-400"
+                                                    >
+                                                      <path d="M3 12h18M3 6h18M3 18h18"/>
+                                                    </svg>
+                                                  </div>
+                                                  
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={subtask.completed}
+                                                    onChange={() => toggleSubtaskComplete(globalIndex, subtask.id)}
+                                                    className="mt-1 accent-blue-500 w-4 h-4"
+                                                  />
+                                                  <div className="flex-1">
+                                                    <div className={`text-base font-medium ${subtask.completed ? 'line-through text-gray-400' : 'text-white'}`}>
+                                                      {subtask.name}
+                                                    </div>
+                                                    {subtask.deadline && (
+                                                      <div className={`text-sm mt-1 ${
+                                                        isOverdue(subtask.deadline) && !subtask.completed
+                                                          ? 'text-red-400'
+                                                          : 'text-gray-400'
+                                                      }`}>
+                                                        Due: {formatDate(subtask.deadline)}
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                </div>
+                                                <button
+                                                  onClick={() => deleteSubtask(globalIndex, subtask.id)}
+                                                  className="opacity-0 group-hover/subtask:opacity-100 text-red-600 hover:text-red-500 text-sm ml-2 transition-colors duration-200"
+                                                  title="Delete subtask"
+                                                >
+                                                  ✖
+                                                </button>
+                                              </div>
+                                            )}
+                                          </Draggable>
+                                        ))}
+                                        {provided.placeholder}
+                                      </div>
+                                    )}
+                                  </Droppable>
                                 </div>
 
-                                {/* Add Task Button - Fixed at bottom */}
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setCurrentListIndex(globalIndex);
-                                    setShowSubtaskModal(true);
-                                  }}
-                                  className="w-full py-2 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 
-                                    rounded-lg text-sm font-medium transition-all duration-200 opacity-0 group-hover:opacity-100 flex-shrink-0"
-                                >
-                                  + Add Task
-                                </button>
+                                {/* Add Task Button */}
+                                <div className="flex-shrink-0 mt-3">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setCurrentListIndex(globalIndex);
+                                      setShowSubtaskModal(true);
+                                    }}
+                                    className="w-full py-2 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 
+                                      rounded-lg text-sm font-medium transition-all duration-200 opacity-0 group-hover:opacity-100"
+                                  >
+                                    + Add Task
+                                  </button>
+                                </div>
                               </div>
                             </div>
                           )}
