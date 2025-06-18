@@ -8,20 +8,13 @@ import { UndoSnackbar } from "../components/UI";
 
 const dummyLists = [
   "Study for exams",
-  "Grocery shopping", 
+  "Grocery shopping",
   "Workout routine",
   "Read a book",
   "Plan vacation",
   "Clean the house",
   "Prepare presentation",
   "Organize files",
-  "List 2",
-  "List 3",
-  "List 4",
-  "List 5",
-  "List 6",
-  "List 7",
-  "List 8",
 ];
 
 export default function TodoListsPage() {
@@ -30,7 +23,7 @@ export default function TodoListsPage() {
   const [currentPage, setCurrentPage] = useState(0);
   const [selectedIndex, setSelectedIndex] = useState(null);
   const [direction, setDirection] = useState(0);
-  
+
   // Modal states
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [listToDelete, setListToDelete] = useState(null);
@@ -41,7 +34,7 @@ export default function TodoListsPage() {
   const [currentListIndex, setCurrentListIndex] = useState(null);
   const [newSubtaskName, setNewSubtaskName] = useState("");
   const [newSubtaskDeadline, setNewSubtaskDeadline] = useState("");
-  
+
   const undoTimeoutRef = useRef(null);
 
   const listsPerPage = 5;
@@ -54,12 +47,16 @@ export default function TodoListsPage() {
     const { destination, source, type } = result;
 
     if (!destination) return;
-    if (destination.droppableId === source.droppableId && destination.index === source.index) return;
+    if (
+      destination.droppableId === source.droppableId &&
+      destination.index === source.index
+    )
+      return;
 
     setTimeout(() => {
-      if (type === 'list') {
+      if (type === "list") {
         handleListReorder(source, destination);
-      } else if (type === 'subtask') {
+      } else if (type === "subtask") {
         handleSubtaskMove(source, destination);
       }
     }, 0);
@@ -70,19 +67,24 @@ export default function TodoListsPage() {
     const destIndex = destination.index;
     const sourceGlobalIndex = startIndex + sourceIndex;
     const destGlobalIndex = startIndex + destIndex;
-    
-    if (sourceGlobalIndex < 0 || sourceGlobalIndex >= lists.length ||
-        destGlobalIndex < 0 || destGlobalIndex >= lists.length) return;
+
+    if (
+      sourceGlobalIndex < 0 ||
+      sourceGlobalIndex >= lists.length ||
+      destGlobalIndex < 0 ||
+      destGlobalIndex >= lists.length
+    )
+      return;
 
     const reorderedLists = Array.from(lists);
     const [movedList] = reorderedLists.splice(sourceGlobalIndex, 1);
     reorderedLists.splice(destGlobalIndex, 0, movedList);
 
     const newSubtasks = {};
-    Object.keys(subtasks).forEach(key => {
+    Object.keys(subtasks).forEach((key) => {
       const oldIndex = parseInt(key);
       let newIndex = oldIndex;
-      
+
       if (oldIndex === sourceGlobalIndex) {
         newIndex = destGlobalIndex;
       } else if (sourceGlobalIndex < destGlobalIndex) {
@@ -94,21 +96,23 @@ export default function TodoListsPage() {
           newIndex = oldIndex + 1;
         }
       }
-      
+
       if (subtasks[oldIndex]) {
         newSubtasks[newIndex] = subtasks[oldIndex];
       }
     });
-    
+
     setLists(reorderedLists);
     setSubtasks(newSubtasks);
   };
 
   const handleSubtaskMove = (source, destination) => {
-    const sourceListId = parseInt(source.droppableId.replace('subtasks-', ''));
-    const destListId = parseInt(destination.droppableId.replace('subtasks-', ''));
+    const sourceListId = parseInt(source.droppableId.replace("subtasks-", ""));
+    const destListId = parseInt(
+      destination.droppableId.replace("subtasks-", "")
+    );
     const newSubtasks = { ...subtasks };
-    
+
     if (sourceListId === destListId) {
       const listSubtasks = Array.from(newSubtasks[sourceListId] || []);
       const [movedSubtask] = listSubtasks.splice(source.index, 1);
@@ -122,7 +126,7 @@ export default function TodoListsPage() {
       newSubtasks[sourceListId] = sourceSubtasks;
       newSubtasks[destListId] = destSubtasks;
     }
-    
+
     setSubtasks(newSubtasks);
   };
 
@@ -143,14 +147,14 @@ export default function TodoListsPage() {
   const confirmDelete = () => {
     const { index, name } = listToDelete;
     const deletedListSubtasks = subtasks[index] || [];
-    
+
     const newList = [...lists];
     newList.splice(index, 1);
     setLists(newList);
-    
-    setSubtasks(prev => {
+
+    setSubtasks((prev) => {
       const newSubtasks = {};
-      Object.keys(prev).forEach(key => {
+      Object.keys(prev).forEach((key) => {
         const oldIndex = parseInt(key);
         if (oldIndex < index) {
           newSubtasks[oldIndex] = prev[oldIndex];
@@ -160,10 +164,10 @@ export default function TodoListsPage() {
       });
       return newSubtasks;
     });
-    
+
     setShowDeleteModal(false);
     setLastDeleted({ name, index, subtasks: deletedListSubtasks });
-    
+
     clearTimeout(undoTimeoutRef.current);
     undoTimeoutRef.current = setTimeout(() => setLastDeleted(null), 5000);
   };
@@ -171,14 +175,14 @@ export default function TodoListsPage() {
   const handleUndo = () => {
     if (lastDeleted) {
       const { name, index, subtasks: deletedSubtasks } = lastDeleted;
-      
+
       const newList = [...lists];
       newList.splice(index, 0, name);
       setLists(newList);
-      
-      setSubtasks(prev => {
+
+      setSubtasks((prev) => {
         const newSubtasks = {};
-        Object.keys(prev).forEach(key => {
+        Object.keys(prev).forEach((key) => {
           const currentIndex = parseInt(key);
           if (currentIndex < index) {
             newSubtasks[currentIndex] = prev[currentIndex];
@@ -189,7 +193,7 @@ export default function TodoListsPage() {
         newSubtasks[index] = deletedSubtasks;
         return newSubtasks;
       });
-      
+
       setLastDeleted(null);
       clearTimeout(undoTimeoutRef.current);
     }
@@ -208,12 +212,12 @@ export default function TodoListsPage() {
         name: newSubtaskName.trim(),
         deadline: newSubtaskDeadline || null,
         completed: false,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
       };
 
-      setSubtasks(prev => ({
+      setSubtasks((prev) => ({
         ...prev,
-        [currentListIndex]: [...(prev[currentListIndex] || []), newSubtask]
+        [currentListIndex]: [...(prev[currentListIndex] || []), newSubtask],
       }));
 
       setNewSubtaskName("");
@@ -224,20 +228,22 @@ export default function TodoListsPage() {
   };
 
   const toggleSubtaskComplete = (listIndex, subtaskId) => {
-    setSubtasks(prev => ({
+    setSubtasks((prev) => ({
       ...prev,
-      [listIndex]: prev[listIndex]?.map(subtask =>
-        subtask.id === subtaskId
-          ? { ...subtask, completed: !subtask.completed }
-          : subtask
-      ) || []
+      [listIndex]:
+        prev[listIndex]?.map((subtask) =>
+          subtask.id === subtaskId
+            ? { ...subtask, completed: !subtask.completed }
+            : subtask
+        ) || [],
     }));
   };
 
   const deleteSubtask = (listIndex, subtaskId) => {
-    setSubtasks(prev => ({
+    setSubtasks((prev) => ({
       ...prev,
-      [listIndex]: prev[listIndex]?.filter(subtask => subtask.id !== subtaskId) || []
+      [listIndex]:
+        prev[listIndex]?.filter((subtask) => subtask.id !== subtaskId) || [],
     }));
   };
 
@@ -280,22 +286,38 @@ export default function TodoListsPage() {
             exit="exit"
             transition={{ duration: 0.4 }}
             className="w-full"
-            style={{ transform: 'none' }}
+            style={{ transform: "none" }}
           >
             <DragDropContext onDragEnd={onDragEnd}>
               <Droppable droppableId="lists" direction="horizontal" type="list">
                 {(provided) => (
                   <div
-                    className="grid grid-cols-5 gap-6 w-full"
                     ref={provided.innerRef}
                     {...provided.droppableProps}
-                    style={{ transform: 'none' }}
+                    style={{
+                      transform: "none",
+                      display: "grid",
+                      gridTemplateColumns:
+                        visibleLists.length < 5
+                          ? `repeat(${visibleLists.length}, minmax(300px, 320px))`
+                          : "repeat(5, 1fr)",
+                      gap: "1.5rem",
+                      justifyContent: "center",
+                      width: "100%",
+                      maxWidth:
+                        visibleLists.length < 5
+                          ? `${visibleLists.length * 350}px`
+                          : "100%",
+                      margin: "0 auto",
+                    }}
                   >
                     {visibleLists.map((listName, index) => {
                       const globalIndex = startIndex + index;
                       const listSubtasks = subtasks[globalIndex] || [];
-                      const completedCount = listSubtasks.filter(task => task.completed).length;
-                      
+                      const completedCount = listSubtasks.filter(
+                        (task) => task.completed
+                      ).length;
+
                       return (
                         <TodoList
                           key={`list-${globalIndex}`}
@@ -304,8 +326,6 @@ export default function TodoListsPage() {
                           index={index}
                           listSubtasks={listSubtasks}
                           completedCount={completedCount}
-                          selectedIndex={selectedIndex}
-                          onSelect={setSelectedIndex}
                           onDelete={handleDeleteList}
                           onAddTask={handleAddTask}
                           onToggleSubtaskComplete={toggleSubtaskComplete}
