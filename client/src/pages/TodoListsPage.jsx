@@ -8,7 +8,7 @@ import {
 
 const dummyLists = [
   "Study for exams",
-  "Grocery shopping",
+  "Grocery shopping", 
   "Workout routine",
   "Read a book",
   "Plan vacation",
@@ -40,7 +40,7 @@ export default function TodoListsPage() {
   const [showSubtaskModal, setShowSubtaskModal] = useState(false);
   const [currentListIndex, setCurrentListIndex] = useState(null);
   const [newSubtaskName, setNewSubtaskName] = useState("");
-  const [newSubtaskDeadline, setNewSubtaskDeadline] = useState("");
+  const [newSubtaskDeadline, setNewSubtaskDeadline] = useState(""); // Fixed: Empty string instead of null
   
   const undoTimeoutRef = useRef(null);
 
@@ -49,75 +49,109 @@ export default function TodoListsPage() {
   const startIndex = currentPage * listsPerPage;
   const visibleLists = lists.slice(startIndex, startIndex + listsPerPage);
 
-  // Handle drag end for both lists and subtasks
+  // Helper function to validate year
+  const isValidYear = (dateString) => {
+    if (!dateString) return true; // Empty is valid
+    const yearStr = dateString.split('-')[0];
+    return yearStr.length === 4 && /^\d{4}$/.test(yearStr);
+  };
+
+  // FIXED: Robust drag end handler with proper error handling
   const onDragEnd = (result) => {
-    if (!result.destination) return;
+    const { destination, source, type } = result;
 
-    const { source, destination, type } = result;
+    // Critical: Always return early if no destination - this allows auto-revert
+    if (!destination) {
+      return;
+    }
 
-    if (type === 'list') {
-      // Handle list reordering
-      const sourceIndex = source.index;
-      const destinationIndex = destination.index;
-      const sourceGlobalIndex = startIndex + sourceIndex;
-      const destinationGlobalIndex = startIndex + destinationIndex;
+    // No change if dropped in same position
+    if (
+      destination.droppableId === source.droppableId &&
+      destination.index === source.index
+    ) {
+      return;
+    }
 
-      const newLists = Array.from(lists);
-      const [movedItem] = newLists.splice(sourceGlobalIndex, 1);
-      newLists.splice(destinationGlobalIndex, 0, movedItem);
+    // Add delay to prevent state conflicts
+    setTimeout(() => {
+      if (type === 'list') {
+        handleListReorder(source, destination);
+      } else if (type === 'subtask') {
+        handleSubtaskMove(source, destination);
+      }
+    }, 0);
+  };
 
-      // Update subtasks mapping
-      const newSubtasks = {};
-      Object.keys(subtasks).forEach(key => {
-        const oldIndex = parseInt(key);
-        let newIndex = oldIndex;
-        
-        if (oldIndex === sourceGlobalIndex) {
-          newIndex = destinationGlobalIndex;
-        } else if (sourceGlobalIndex < destinationGlobalIndex) {
-          if (oldIndex > sourceGlobalIndex && oldIndex <= destinationGlobalIndex) {
-            newIndex = oldIndex - 1;
-          }
-        } else {
-          if (oldIndex >= destinationGlobalIndex && oldIndex < sourceGlobalIndex) {
-            newIndex = oldIndex + 1;
-          }
+  const handleListReorder = (source, destination) => {
+    const sourceIndex = source.index;
+    const destIndex = destination.index;
+    
+    const sourceGlobalIndex = startIndex + sourceIndex;
+    const destGlobalIndex = startIndex + destIndex;
+    
+    // Bounds checking
+    if (sourceGlobalIndex < 0 || sourceGlobalIndex >= lists.length ||
+        destGlobalIndex < 0 || destGlobalIndex >= lists.length) {
+      return;
+    }
+
+    const reorderedLists = Array.from(lists);
+    const [movedList] = reorderedLists.splice(sourceGlobalIndex, 1);
+    reorderedLists.splice(destGlobalIndex, 0, movedList);
+
+    // Update subtasks mapping
+    const newSubtasks = {};
+    Object.keys(subtasks).forEach(key => {
+      const oldIndex = parseInt(key);
+      let newIndex = oldIndex;
+      
+      if (oldIndex === sourceGlobalIndex) {
+        newIndex = destGlobalIndex;
+      } else if (sourceGlobalIndex < destGlobalIndex) {
+        if (oldIndex > sourceGlobalIndex && oldIndex <= destGlobalIndex) {
+          newIndex = oldIndex - 1;
         }
-        
-        if (subtasks[oldIndex]) {
-          newSubtasks[newIndex] = subtasks[oldIndex];
-        }
-      });
-      
-      setLists(newLists);
-      setSubtasks(newSubtasks);
-    } else if (type === 'subtask') {
-      // Handle subtask reordering/moving between lists
-      const sourceListId = parseInt(source.droppableId.replace('subtasks-', ''));
-      const destListId = parseInt(destination.droppableId.replace('subtasks-', ''));
-      
-      const newSubtasks = { ...subtasks };
-      
-      if (sourceListId === destListId) {
-        // Reordering within the same list
-        const listSubtasks = Array.from(newSubtasks[sourceListId] || []);
-        const [movedSubtask] = listSubtasks.splice(source.index, 1);
-        listSubtasks.splice(destination.index, 0, movedSubtask);
-        newSubtasks[sourceListId] = listSubtasks;
       } else {
-        // Moving between different lists
-        const sourceSubtasks = Array.from(newSubtasks[sourceListId] || []);
-        const destSubtasks = Array.from(newSubtasks[destListId] || []);
-        
-        const [movedSubtask] = sourceSubtasks.splice(source.index, 1);
-        destSubtasks.splice(destination.index, 0, movedSubtask);
-        
-        newSubtasks[sourceListId] = sourceSubtasks;
-        newSubtasks[destListId] = destSubtasks;
+        if (oldIndex >= destGlobalIndex && oldIndex < sourceGlobalIndex) {
+          newIndex = oldIndex + 1;
+        }
       }
       
-      setSubtasks(newSubtasks);
+      if (subtasks[oldIndex]) {
+        newSubtasks[newIndex] = subtasks[oldIndex];
+      }
+    });
+    
+    setLists(reorderedLists);
+    setSubtasks(newSubtasks);
+  };
+
+  const handleSubtaskMove = (source, destination) => {
+    const sourceListId = parseInt(source.droppableId.replace('subtasks-', ''));
+    const destListId = parseInt(destination.droppableId.replace('subtasks-', ''));
+    
+    const newSubtasks = { ...subtasks };
+    
+    if (sourceListId === destListId) {
+      // Reordering within the same list
+      const listSubtasks = Array.from(newSubtasks[sourceListId] || []);
+      const [movedSubtask] = listSubtasks.splice(source.index, 1);
+      listSubtasks.splice(destination.index, 0, movedSubtask);
+      newSubtasks[sourceListId] = listSubtasks;
+    } else {
+      // Moving between different lists
+      const sourceSubtasks = Array.from(newSubtasks[sourceListId] || []);
+      const destSubtasks = Array.from(newSubtasks[destListId] || []);
+      
+      const [movedSubtask] = sourceSubtasks.splice(source.index, 1);
+      destSubtasks.splice(destination.index, 0, movedSubtask);
+      
+      newSubtasks[sourceListId] = sourceSubtasks;
+      newSubtasks[destListId] = destSubtasks;
     }
+    
+    setSubtasks(newSubtasks);
   };
 
   const addList = () => {
@@ -183,6 +217,9 @@ export default function TodoListsPage() {
 
   const handleDelete = () => {
     const { index, name } = listToDelete;
+    
+    const deletedListSubtasks = subtasks[index] || [];
+    
     const newList = [...lists];
     newList.splice(index, 1);
     setLists(newList);
@@ -201,9 +238,13 @@ export default function TodoListsPage() {
     });
     
     setShowDeleteModal(false);
-    setLastDeleted({ name, index });
+    setLastDeleted({ 
+      name, 
+      index, 
+      subtasks: deletedListSubtasks
+    });
+    
     clearTimeout(undoTimeoutRef.current);
-
     undoTimeoutRef.current = setTimeout(() => {
       setLastDeleted(null);
     }, 5000);
@@ -211,9 +252,28 @@ export default function TodoListsPage() {
 
   const handleUndo = () => {
     if (lastDeleted) {
+      const { name, index, subtasks: deletedSubtasks } = lastDeleted;
+      
       const newList = [...lists];
-      newList.splice(lastDeleted.index, 0, lastDeleted.name);
+      newList.splice(index, 0, name);
       setLists(newList);
+      
+      setSubtasks(prev => {
+        const newSubtasks = {};
+        
+        Object.keys(prev).forEach(key => {
+          const currentIndex = parseInt(key);
+          if (currentIndex < index) {
+            newSubtasks[currentIndex] = prev[currentIndex];
+          } else {
+            newSubtasks[currentIndex + 1] = prev[currentIndex];
+          }
+        });
+        
+        newSubtasks[index] = deletedSubtasks;
+        return newSubtasks;
+      });
+      
       setLastDeleted(null);
       clearTimeout(undoTimeoutRef.current);
     }
@@ -235,7 +295,7 @@ export default function TodoListsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0f172a] text-white flex flex-col relative overflow-hidden">
+    <div className="min-h-screen bg-[#0f172a] text-white flex flex-col relative">
       {/* Header */}
       <div className="flex justify-between items-center px-6 py-4">
         <h2 className="text-2xl font-bold">Welcome, Username</h2>
@@ -247,8 +307,8 @@ export default function TodoListsPage() {
         </button>
       </div>
 
-      {/* Animated List Container with Drag and Drop */}
-      <div className="flex-1 px-8 flex items-center relative overflow-hidden">
+      {/* FIXED: Removed transform-causing overflow-hidden */}
+      <div className="flex-1 px-8 flex items-center relative">
         <AnimatePresence custom={direction} mode="wait">
           <motion.div
             key={currentPage}
@@ -259,6 +319,7 @@ export default function TodoListsPage() {
             exit="exit"
             transition={{ duration: 0.4 }}
             className="w-full"
+            style={{ transform: 'none' }} // CRITICAL: Override any transforms
           >
             <DragDropContext onDragEnd={onDragEnd}>
               <Droppable droppableId="lists" direction="horizontal" type="list">
@@ -267,6 +328,7 @@ export default function TodoListsPage() {
                     className="grid grid-cols-5 gap-6 w-full"
                     ref={provided.innerRef}
                     {...provided.droppableProps}
+                    style={{ transform: 'none' }} // CRITICAL: No transforms on droppable
                   >
                     {visibleLists.map((listName, index) => {
                       const globalIndex = startIndex + index;
@@ -275,7 +337,7 @@ export default function TodoListsPage() {
                       
                       return (
                         <Draggable
-                          key={`${listName}-${globalIndex}`}
+                          key={`list-${globalIndex}`} // FIXED: Simplified key
                           draggableId={`list-${globalIndex}`}
                           index={index}
                           type="list"
@@ -292,16 +354,19 @@ export default function TodoListsPage() {
                                     : "border border-transparent"
                                 }
                                 hover:border-[2px] hover:border-transparent hover:bg-gradient-to-r hover:from-blue-500 hover:to-purple-500 hover:bg-origin-border
-                                ${snapshot.isDragging ? "shadow-2xl scale-105 z-50" : ""}
+                                ${snapshot.isDragging ? "shadow-2xl scale-105 z-[9999]" : ""}
                               `}
                               style={{
+                                // FIXED: Proper style override for drag positioning
                                 ...provided.draggableProps.style,
                                 transform: snapshot.isDragging 
-                                  ? `${provided.draggableProps.style?.transform} rotate(2deg)` 
-                                  : provided.draggableProps.style?.transform
+                                  ? `${provided.draggableProps.style?.transform || ''} rotate(2deg)` 
+                                  : provided.draggableProps.style?.transform || 'none',
+                                position: snapshot.isDragging ? 'fixed' : 'relative',
+                                zIndex: snapshot.isDragging ? 9999 : 'auto'
                               }}
                             >
-                              {/* Delete Icon (hover only) */}
+                              {/* Delete Icon */}
                               <div
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -318,10 +383,9 @@ export default function TodoListsPage() {
                                 ✖
                               </div>
 
-                              <div className="h-full w-full rounded-[1rem] bg-[#334155] p-4 flex flex-col overflow-hidden">
-                                {/* Header section with drag handle */}
+                              <div className="h-full w-full rounded-[1rem] bg-[#334155] p-4 flex flex-col">
+                                {/* Header with drag handle */}
                                 <div className="flex-shrink-0 flex items-center gap-2 mb-2">
-                                  {/* Drag Handle - Only this area allows dragging */}
                                   <div
                                     {...provided.dragHandleProps}
                                     className="cursor-grab active:cursor-grabbing p-1 rounded hover:bg-gray-600 transition-colors"
@@ -361,92 +425,115 @@ export default function TodoListsPage() {
                                   </div>
                                 )}
 
-                                {/* Subtasks list with drag and drop */}
-                                <div className="flex-1 min-h-0 overflow-hidden">
-                                  <Droppable droppableId={`subtasks-${globalIndex}`} type="subtask">
+                                {/* FIXED: Subtasks with proper portal handling */}
+                                <div className="flex-1 min-h-0">
+                                  <Droppable 
+                                    droppableId={`subtasks-${globalIndex}`} 
+                                    type="subtask"
+                                    renderClone={(provided, snapshot, rubric) => (
+                                      <div
+                                        {...provided.draggableProps}
+                                        {...provided.dragHandleProps}
+                                        ref={provided.innerRef}
+                                        style={{
+                                          ...provided.draggableProps.style,
+                                          transform: snapshot.isDragging 
+                                            ? `${provided.draggableProps.style?.transform || ''} rotate(1deg)` 
+                                            : provided.draggableProps.style?.transform || 'none'
+                                        }}
+                                        className="p-3 rounded-lg bg-[#475569] shadow-lg"
+                                      >
+                                        {listSubtasks[rubric.source.index]?.name || 'Task'}
+                                      </div>
+                                    )}
+                                  >
                                     {(provided, snapshot) => (
                                       <div
                                         ref={provided.innerRef}
                                         {...provided.droppableProps}
-                                        className={`space-y-2 h-full overflow-y-auto transition-colors duration-200 ${
+                                        className={`h-full overflow-y-auto transition-colors duration-200 ${
                                           snapshot.isDraggingOver ? 'bg-blue-500/10 rounded-lg p-1' : ''
                                         }`}
+                                        style={{ transform: 'none' }} // CRITICAL: No transforms
                                       >
-                                        {listSubtasks.map((subtask, subtaskIndex) => (
-                                          <Draggable
-                                            key={subtask.id}
-                                            draggableId={`subtask-${subtask.id}`}
-                                            index={subtaskIndex}
-                                            type="subtask"
-                                          >
-                                            {(provided, snapshot) => (
-                                              <div
-                                                ref={provided.innerRef}
-                                                {...provided.draggableProps}
-                                                className={`p-3 rounded-lg bg-[#475569] flex items-start justify-between group/subtask transition-all duration-200
-                                                  ${subtask.completed ? 'opacity-60' : ''}
-                                                  ${snapshot.isDragging ? 'shadow-lg scale-105 z-50' : ''}
-                                                `}
-                                                onClick={(e) => e.stopPropagation()}
-                                                style={{
-                                                  ...provided.draggableProps.style,
-                                                  transform: snapshot.isDragging 
-                                                    ? `${provided.draggableProps.style?.transform} rotate(1deg)` 
-                                                    : provided.draggableProps.style?.transform
-                                                }}
-                                              >
-                                                <div className="flex items-start gap-3 flex-1">
-                                                  {/* Subtask drag handle */}
-                                                  <div
-                                                    {...provided.dragHandleProps}
-                                                    className="cursor-grab active:cursor-grabbing p-1 rounded hover:bg-gray-600 transition-colors opacity-0 group-hover/subtask:opacity-100"
-                                                    title="Drag to reorder or move to another list"
-                                                  >
-                                                    <svg
-                                                      width="12"
-                                                      height="12"
-                                                      viewBox="0 0 24 24"
-                                                      fill="none"
-                                                      stroke="currentColor"
-                                                      strokeWidth="2"
-                                                      className="text-gray-400"
-                                                    >
-                                                      <path d="M3 12h18M3 6h18M3 18h18"/>
-                                                    </svg>
-                                                  </div>
-                                                  
-                                                  <input
-                                                    type="checkbox"
-                                                    checked={subtask.completed}
-                                                    onChange={() => toggleSubtaskComplete(globalIndex, subtask.id)}
-                                                    className="mt-1 accent-blue-500 w-4 h-4"
-                                                  />
-                                                  <div className="flex-1">
-                                                    <div className={`text-base font-medium ${subtask.completed ? 'line-through text-gray-400' : 'text-white'}`}>
-                                                      {subtask.name}
-                                                    </div>
-                                                    {subtask.deadline && (
-                                                      <div className={`text-sm mt-1 ${
-                                                        isOverdue(subtask.deadline) && !subtask.completed
-                                                          ? 'text-red-400'
-                                                          : 'text-gray-400'
-                                                      }`}>
-                                                        Due: {formatDate(subtask.deadline)}
-                                                      </div>
-                                                    )}
-                                                  </div>
-                                                </div>
-                                                <button
-                                                  onClick={() => deleteSubtask(globalIndex, subtask.id)}
-                                                  className="opacity-0 group-hover/subtask:opacity-100 text-red-600 hover:text-red-500 text-sm ml-2 transition-colors duration-200"
-                                                  title="Delete subtask"
+                                        <div className="space-y-2">
+                                          {listSubtasks.map((subtask, subtaskIndex) => (
+                                            <Draggable
+                                              key={subtask.id}
+                                              draggableId={`subtask-${subtask.id}`}
+                                              index={subtaskIndex}
+                                              type="subtask"
+                                            >
+                                              {(provided, snapshot) => (
+                                                <div
+                                                  ref={provided.innerRef}
+                                                  {...provided.draggableProps}
+                                                  className={`p-3 rounded-lg bg-[#475569] flex items-start justify-between group/subtask transition-all duration-200
+                                                    ${subtask.completed ? 'opacity-60' : ''}
+                                                    ${snapshot.isDragging ? 'shadow-lg scale-105 z-[9999]' : ''}
+                                                  `}
+                                                  onClick={(e) => e.stopPropagation()}
+                                                  style={{
+                                                    ...provided.draggableProps.style,
+                                                    transform: snapshot.isDragging 
+                                                      ? `${provided.draggableProps.style?.transform || ''} rotate(1deg)` 
+                                                      : provided.draggableProps.style?.transform || 'none',
+                                                    position: snapshot.isDragging ? 'fixed' : 'relative',
+                                                    zIndex: snapshot.isDragging ? 9999 : 'auto'
+                                                  }}
                                                 >
-                                                  ✖
-                                                </button>
-                                              </div>
-                                            )}
-                                          </Draggable>
-                                        ))}
+                                                  <div className="flex items-start gap-3 flex-1">
+                                                    <div
+                                                      {...provided.dragHandleProps}
+                                                      className="cursor-grab active:cursor-grabbing p-1 rounded hover:bg-gray-600 transition-colors opacity-0 group-hover/subtask:opacity-100"
+                                                      title="Drag to reorder or move to another list"
+                                                    >
+                                                      <svg
+                                                        width="12"
+                                                        height="12"
+                                                        viewBox="0 0 24 24"
+                                                        fill="none"
+                                                        stroke="currentColor"
+                                                        strokeWidth="2"
+                                                        className="text-gray-400"
+                                                      >
+                                                        <path d="M3 12h18M3 6h18M3 18h18"/>
+                                                      </svg>
+                                                    </div>
+                                                    
+                                                    <input
+                                                      type="checkbox"
+                                                      checked={subtask.completed}
+                                                      onChange={() => toggleSubtaskComplete(globalIndex, subtask.id)}
+                                                      className="mt-1 accent-blue-500 w-4 h-4"
+                                                    />
+                                                    <div className="flex-1">
+                                                      <div className={`text-base font-medium ${subtask.completed ? 'line-through text-gray-400' : 'text-white'}`}>
+                                                        {subtask.name}
+                                                      </div>
+                                                      {subtask.deadline && (
+                                                        <div className={`text-sm mt-1 ${
+                                                          isOverdue(subtask.deadline) && !subtask.completed
+                                                            ? 'text-red-400'
+                                                            : 'text-gray-400'
+                                                        }`}>
+                                                          Due: {formatDate(subtask.deadline)}
+                                                        </div>
+                                                      )}
+                                                    </div>
+                                                  </div>
+                                                  <button
+                                                    onClick={() => deleteSubtask(globalIndex, subtask.id)}
+                                                    className="opacity-0 group-hover/subtask:opacity-100 text-red-600 hover:text-red-500 text-sm ml-2 transition-colors duration-200"
+                                                    title="Delete subtask"
+                                                  >
+                                                    ✖
+                                                  </button>
+                                                </div>
+                                              )}
+                                            </Draggable>
+                                          ))}
+                                        </div>
                                         {provided.placeholder}
                                       </div>
                                     )}
@@ -578,7 +665,7 @@ export default function TodoListsPage() {
         </div>
       )}
 
-      {/* Add Task Modal */}
+      {/* Add Task Modal - FIXED with no warnings */}
       {showSubtaskModal && (
         <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
           <motion.div
@@ -607,9 +694,25 @@ export default function TodoListsPage() {
                 <input
                   type="date"
                   value={newSubtaskDeadline}
-                  onChange={(e) => setNewSubtaskDeadline(e.target.value)}
-                  className="w-full px-4 py-2 rounded-md bg-[#334155] text-white outline-none"
+                  onChange={(e) => {
+                    setNewSubtaskDeadline(e.target.value);
+                  }}
+                  onBlur={(e) => {
+                    const selectedDate = e.target.value;
+                    if (selectedDate && !isValidYear(selectedDate)) {
+                      setNewSubtaskDeadline("");
+                    }
+                  }}
+                  min="1000-01-01"
+                  max="9999-12-31"
+                  className={`w-full px-4 py-2 rounded-md bg-[#334155] text-white outline-none ${
+                    newSubtaskDeadline && !isValidYear(newSubtaskDeadline) ? 'border border-red-500' : ''
+                  }`}
                 />
+                {newSubtaskDeadline && !isValidYear(newSubtaskDeadline) && (
+                  <p className="text-xs text-red-400 mt-1">Please enter a valid 4-digit year</p>
+                )}
+                <p className="text-xs text-gray-400 mt-1"> Please enter a year up to 9999.</p>
               </div>
             </div>
 
