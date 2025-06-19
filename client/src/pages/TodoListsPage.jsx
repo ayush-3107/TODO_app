@@ -5,7 +5,8 @@ import { DragDropContext, Droppable } from "@hello-pangea/dnd";
 import TodoList from "../components/TodoList";
 import { AddListModal, AddTaskModal, DeleteModal } from "../components/Modals";
 import { UndoSnackbar } from "../components/UI";
-import SearchBar from "../components/SearchBar/SearchBar"; // NEW: Import SearchBar
+import SearchBar from "../components/SearchBar/SearchBar";
+
 
 const dummyLists = [
   "Study for exams",
@@ -24,12 +25,13 @@ export default function TodoListsPage() {
   const [currentPage, setCurrentPage] = useState(0);
   const [selectedIndex, setSelectedIndex] = useState(null);
   const [direction, setDirection] = useState(0);
-  const [selectedListIndex, setSelectedListIndex] = useState(null); // NEW: For search highlighting
+  const [selectedListIndex, setSelectedListIndex] = useState(null);
 
   // Modal states
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [listToDelete, setListToDelete] = useState(null);
   const [lastDeleted, setLastDeleted] = useState(null);
+  const [lastDeletedSubtask, setLastDeletedSubtask] = useState(null); // NEW: For subtask undo
   const [showAddModal, setShowAddModal] = useState(false);
   const [newListName, setNewListName] = useState("");
   const [showSubtaskModal, setShowSubtaskModal] = useState(false);
@@ -38,35 +40,30 @@ export default function TodoListsPage() {
   const [newSubtaskDeadline, setNewSubtaskDeadline] = useState("");
 
   const undoTimeoutRef = useRef(null);
-  const highlightTimeoutRef = useRef(null); // NEW: For search highlight timeout
+  const subtaskUndoTimeoutRef = useRef(null); // NEW: For subtask undo timeout
+  const highlightTimeoutRef = useRef(null);
 
   const listsPerPage = 5;
   const totalPages = Math.ceil(lists.length / listsPerPage);
   const startIndex = currentPage * listsPerPage;
   const visibleLists = lists.slice(startIndex, startIndex + listsPerPage);
 
-  // NEW: Handle navigation from search
- // Update the handleSearchNavigation function in your TodoListsPage.jsx:
+  // Handle navigation from search
+  const handleSearchNavigation = (listIndex, page) => {
+    if (page !== currentPage) {
+      setDirection(page > currentPage ? 1 : -1);
+      setCurrentPage(page);
+    }
+    
+    setSelectedListIndex(listIndex);
+    
+    clearTimeout(highlightTimeoutRef.current);
+    highlightTimeoutRef.current = setTimeout(() => {
+      setSelectedListIndex(null);
+    }, 2000);
+  };
 
-const handleSearchNavigation = (listIndex, page) => {
-  // Navigate to the correct page
-  if (page !== currentPage) {
-    setDirection(page > currentPage ? 1 : -1);
-    setCurrentPage(page);
-  }
-  
-  // Highlight the found list
-  setSelectedListIndex(listIndex);
-  
-  // UPDATED: Clear highlight after 2 seconds (increased from 1 second)
-  clearTimeout(highlightTimeoutRef.current);
-  highlightTimeoutRef.current = setTimeout(() => {
-    setSelectedListIndex(null);
-  }, 2000);
-};
-
-
-  // Drag and drop handlers
+  // Drag and drop handlers (keeping existing code)
   const onDragEnd = (result) => {
     const { destination, source, type } = result;
 
@@ -223,6 +220,27 @@ const handleSearchNavigation = (listIndex, page) => {
     }
   };
 
+  // NEW: Subtask undo functionality
+  const handleUndoSubtask = () => {
+    if (lastDeletedSubtask) {
+      const { subtask, listIndex, originalIndex } = lastDeletedSubtask;
+
+      setSubtasks(prev => {
+        const currentSubtasks = [...(prev[listIndex] || [])];
+        // Insert the subtask back at its original position
+        currentSubtasks.splice(originalIndex, 0, subtask);
+        
+        return {
+          ...prev,
+          [listIndex]: currentSubtasks
+        };
+      });
+
+      setLastDeletedSubtask(null);
+      clearTimeout(subtaskUndoTimeoutRef.current);
+    }
+  };
+
   // Subtask operations
   const handleAddTask = (listIndex) => {
     setCurrentListIndex(listIndex);
@@ -263,12 +281,38 @@ const handleSearchNavigation = (listIndex, page) => {
     }));
   };
 
+  // UPDATED: Enhanced deleteSubtask with undo functionality
   const deleteSubtask = (listIndex, subtaskId) => {
-    setSubtasks((prev) => ({
-      ...prev,
-      [listIndex]:
-        prev[listIndex]?.filter((subtask) => subtask.id !== subtaskId) || [],
-    }));
+    // Clear any existing list undo when deleting a subtask
+    setLastDeleted(null);
+    clearTimeout(undoTimeoutRef.current);
+
+    setSubtasks((prev) => {
+      const currentSubtasks = prev[listIndex] || [];
+      const subtaskToDelete = currentSubtasks.find(subtask => subtask.id === subtaskId);
+      const originalIndex = currentSubtasks.findIndex(subtask => subtask.id === subtaskId);
+      
+      if (subtaskToDelete) {
+        // Store the deleted subtask for undo
+        setLastDeletedSubtask({
+          subtask: subtaskToDelete,
+          listIndex: listIndex,
+          originalIndex: originalIndex,
+          listName: lists[listIndex]
+        });
+
+        // Set timeout to clear undo option
+        clearTimeout(subtaskUndoTimeoutRef.current);
+        subtaskUndoTimeoutRef.current = setTimeout(() => {
+          setLastDeletedSubtask(null);
+        }, 5000);
+      }
+
+      return {
+        ...prev,
+        [listIndex]: currentSubtasks.filter((subtask) => subtask.id !== subtaskId),
+      };
+    });
   };
 
   // Navigation
@@ -276,7 +320,7 @@ const handleSearchNavigation = (listIndex, page) => {
     if (newPage >= 0 && newPage < totalPages) {
       setDirection(newPage > currentPage ? 1 : -1);
       setCurrentPage(newPage);
-      setSelectedListIndex(null); // NEW: Clear highlight when changing pages manually
+      setSelectedListIndex(null);
     }
   };
 
@@ -292,7 +336,6 @@ const handleSearchNavigation = (listIndex, page) => {
       <div className="flex justify-between items-center px-6 py-4" style={{ position: 'relative', zIndex: 100000 }}>
         <h2 className="text-2xl font-bold">Welcome, Username</h2>
         
-        {/* NEW: Search bar positioned in center */}
         <div className="absolute left-1/2 transform -translate-x-1/2" style={{ zIndex: 100000 }}>
           <SearchBar
             lists={lists}
@@ -353,7 +396,7 @@ const handleSearchNavigation = (listIndex, page) => {
                       const completedCount = listSubtasks.filter(
                         (task) => task.completed
                       ).length;
-                      const isHighlighted = selectedListIndex === globalIndex; // NEW: Check if highlighted
+                      const isHighlighted = selectedListIndex === globalIndex;
 
                       return (
                         <TodoList
@@ -367,7 +410,7 @@ const handleSearchNavigation = (listIndex, page) => {
                           onAddTask={handleAddTask}
                           onToggleSubtaskComplete={toggleSubtaskComplete}
                           onDeleteSubtask={deleteSubtask}
-                          isHighlighted={isHighlighted} // NEW: Pass highlight prop
+                          isHighlighted={isHighlighted}
                         />
                       );
                     })}
@@ -440,12 +483,33 @@ const handleSearchNavigation = (listIndex, page) => {
         onAdd={addSubtask}
       />
 
-      {/* Undo Snackbar */}
+      {/* List Undo Snackbar */}
       <UndoSnackbar
         isVisible={!!lastDeleted}
         deletedItemName={lastDeleted?.name}
         onUndo={handleUndo}
       />
+
+      {/* NEW: Subtask Undo Snackbar */}
+      <AnimatePresence>
+        {lastDeletedSubtask && (
+          <motion.div
+            initial={{ y: 100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 100, opacity: 0 }}
+            transition={{ duration: 0.4 }}
+            className="fixed bottom-6 right-6 bg-[#1e293b] text-white px-6 py-3 rounded-full shadow-xl z-50 flex items-center gap-4"
+          >
+            <span>Task "{lastDeletedSubtask.subtask.name}" deleted from "{lastDeletedSubtask.listName}".</span>
+            <button
+              onClick={handleUndoSubtask}
+              className="underline text-blue-400 hover:text-purple-400 font-semibold"
+            >
+              Undo
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
