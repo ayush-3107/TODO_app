@@ -7,12 +7,11 @@ const TodoList = ({
   index,
   listSubtasks,
   completedCount,
-  selectedIndex,
-  onSelect,
   onDelete,
   onAddTask,
   onToggleSubtaskComplete,
-  onDeleteSubtask
+  onDeleteSubtask,
+  isHighlighted = false
 }) => {
   return (
     <Draggable
@@ -25,14 +24,11 @@ const TodoList = ({
         <div
           ref={provided.innerRef}
           {...provided.draggableProps}
-          onClick={() => onSelect(globalIndex)}
           className={`relative h-[80vh] cursor-pointer rounded-2xl transition-all duration-300 group
-            ${
-              globalIndex === selectedIndex
-                ? "border-2 border-transparent bg-gradient-to-r from-blue-500 to-purple-500 bg-origin-border"
-                : "border border-transparent"
+            ${isHighlighted 
+              ? "border-[2px] border-transparent bg-gradient-to-r from-blue-500 to-purple-500 bg-origin-border" 
+              : "border border-transparent hover:border-[2px] hover:border-transparent hover:bg-gradient-to-r hover:from-blue-500 hover:to-purple-500 hover:bg-origin-border"
             }
-            hover:border-[2px] hover:border-transparent hover:bg-gradient-to-r hover:from-blue-500 hover:to-purple-500 hover:bg-origin-border
             ${snapshot.isDragging ? "shadow-2xl scale-105 z-[9999]" : ""}
           `}
           style={{

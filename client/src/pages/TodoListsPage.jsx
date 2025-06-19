@@ -5,6 +5,7 @@ import { DragDropContext, Droppable } from "@hello-pangea/dnd";
 import TodoList from "../components/TodoList";
 import { AddListModal, AddTaskModal, DeleteModal } from "../components/Modals";
 import { UndoSnackbar } from "../components/UI";
+import SearchBar from "../components/SearchBar/SearchBar"; // NEW: Import SearchBar
 
 const dummyLists = [
   "Study for exams",
@@ -23,6 +24,7 @@ export default function TodoListsPage() {
   const [currentPage, setCurrentPage] = useState(0);
   const [selectedIndex, setSelectedIndex] = useState(null);
   const [direction, setDirection] = useState(0);
+  const [selectedListIndex, setSelectedListIndex] = useState(null); // NEW: For search highlighting
 
   // Modal states
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -36,11 +38,33 @@ export default function TodoListsPage() {
   const [newSubtaskDeadline, setNewSubtaskDeadline] = useState("");
 
   const undoTimeoutRef = useRef(null);
+  const highlightTimeoutRef = useRef(null); // NEW: For search highlight timeout
 
   const listsPerPage = 5;
   const totalPages = Math.ceil(lists.length / listsPerPage);
   const startIndex = currentPage * listsPerPage;
   const visibleLists = lists.slice(startIndex, startIndex + listsPerPage);
+
+  // NEW: Handle navigation from search
+ // Update the handleSearchNavigation function in your TodoListsPage.jsx:
+
+const handleSearchNavigation = (listIndex, page) => {
+  // Navigate to the correct page
+  if (page !== currentPage) {
+    setDirection(page > currentPage ? 1 : -1);
+    setCurrentPage(page);
+  }
+  
+  // Highlight the found list
+  setSelectedListIndex(listIndex);
+  
+  // UPDATED: Clear highlight after 2 seconds (increased from 1 second)
+  clearTimeout(highlightTimeoutRef.current);
+  highlightTimeoutRef.current = setTimeout(() => {
+    setSelectedListIndex(null);
+  }, 2000);
+};
+
 
   // Drag and drop handlers
   const onDragEnd = (result) => {
@@ -252,6 +276,7 @@ export default function TodoListsPage() {
     if (newPage >= 0 && newPage < totalPages) {
       setDirection(newPage > currentPage ? 1 : -1);
       setCurrentPage(newPage);
+      setSelectedListIndex(null); // NEW: Clear highlight when changing pages manually
     }
   };
 
@@ -263,9 +288,20 @@ export default function TodoListsPage() {
 
   return (
     <div className="min-h-screen bg-[#0f172a] text-white flex flex-col relative">
-      {/* Header */}
-      <div className="flex justify-between items-center px-6 py-4">
+      {/* Header with SearchBar */}
+      <div className="flex justify-between items-center px-6 py-4" style={{ position: 'relative', zIndex: 100000 }}>
         <h2 className="text-2xl font-bold">Welcome, Username</h2>
+        
+        {/* NEW: Search bar positioned in center */}
+        <div className="absolute left-1/2 transform -translate-x-1/2" style={{ zIndex: 100000 }}>
+          <SearchBar
+            lists={lists}
+            subtasks={subtasks}
+            onNavigateToList={handleSearchNavigation}
+            listsPerPage={listsPerPage}
+          />
+        </div>
+        
         <button
           onClick={() => setShowAddModal(true)}
           className="bg-gray-300 text-black px-4 py-2 rounded-full font-semibold hover:bg-gray-400"
@@ -317,6 +353,7 @@ export default function TodoListsPage() {
                       const completedCount = listSubtasks.filter(
                         (task) => task.completed
                       ).length;
+                      const isHighlighted = selectedListIndex === globalIndex; // NEW: Check if highlighted
 
                       return (
                         <TodoList
@@ -330,6 +367,7 @@ export default function TodoListsPage() {
                           onAddTask={handleAddTask}
                           onToggleSubtaskComplete={toggleSubtaskComplete}
                           onDeleteSubtask={deleteSubtask}
+                          isHighlighted={isHighlighted} // NEW: Pass highlight prop
                         />
                       );
                     })}
