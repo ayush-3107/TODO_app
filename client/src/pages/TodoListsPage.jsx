@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { DragDropContext, Droppable } from "@hello-pangea/dnd";
 
@@ -6,7 +6,6 @@ import TodoList from "../components/TodoList";
 import { AddListModal, AddTaskModal, DeleteModal } from "../components/Modals";
 import { UndoSnackbar } from "../components/UI";
 import SearchBar from "../components/SearchBar/SearchBar";
-
 
 const dummyLists = [
   "Study for exams",
@@ -26,12 +25,13 @@ export default function TodoListsPage() {
   const [selectedIndex, setSelectedIndex] = useState(null);
   const [direction, setDirection] = useState(0);
   const [selectedListIndex, setSelectedListIndex] = useState(null);
+  const [hoveredListIndex, setHoveredListIndex] = useState(null); // NEW: Track hovered list
 
   // Modal states
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [listToDelete, setListToDelete] = useState(null);
   const [lastDeleted, setLastDeleted] = useState(null);
-  const [lastDeletedSubtask, setLastDeletedSubtask] = useState(null); // NEW: For subtask undo
+  const [lastDeletedSubtask, setLastDeletedSubtask] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newListName, setNewListName] = useState("");
   const [showSubtaskModal, setShowSubtaskModal] = useState(false);
@@ -40,13 +40,52 @@ export default function TodoListsPage() {
   const [newSubtaskDeadline, setNewSubtaskDeadline] = useState("");
 
   const undoTimeoutRef = useRef(null);
-  const subtaskUndoTimeoutRef = useRef(null); // NEW: For subtask undo timeout
+  const subtaskUndoTimeoutRef = useRef(null);
   const highlightTimeoutRef = useRef(null);
 
   const listsPerPage = 5;
   const totalPages = Math.ceil(lists.length / listsPerPage);
   const startIndex = currentPage * listsPerPage;
   const visibleLists = lists.slice(startIndex, startIndex + listsPerPage);
+
+  // NEW: Keyboard shortcuts handler
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      // Ctrl + N: Add new list
+      if (event.ctrlKey && event.key === 'n') {
+        event.preventDefault();
+        setShowAddModal(true);
+      }
+
+      // Ctrl + Shift + Backspace: Delete hovered list
+      if (event.ctrlKey && event.shiftKey && event.key === 'Backspace') {
+        event.preventDefault();
+        if (hoveredListIndex !== null) {
+          const listName = lists[hoveredListIndex];
+          if (listName) {
+            handleDeleteList(hoveredListIndex, listName);
+          }
+        }
+      }
+    };
+
+    // Add event listener to document
+    document.addEventListener('keydown', handleKeyDown);
+
+    // Cleanup event listener
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [hoveredListIndex, lists]);
+
+  // NEW: Handle list hover
+  const handleListHover = (listIndex) => {
+    setHoveredListIndex(listIndex);
+  };
+
+  const handleListLeave = () => {
+    setHoveredListIndex(null);
+  };
 
   // Handle navigation from search
   const handleSearchNavigation = (listIndex, page) => {
@@ -220,14 +259,12 @@ export default function TodoListsPage() {
     }
   };
 
-  // NEW: Subtask undo functionality
   const handleUndoSubtask = () => {
     if (lastDeletedSubtask) {
       const { subtask, listIndex, originalIndex } = lastDeletedSubtask;
 
       setSubtasks(prev => {
         const currentSubtasks = [...(prev[listIndex] || [])];
-        // Insert the subtask back at its original position
         currentSubtasks.splice(originalIndex, 0, subtask);
         
         return {
@@ -281,9 +318,7 @@ export default function TodoListsPage() {
     }));
   };
 
-  // UPDATED: Enhanced deleteSubtask with undo functionality
   const deleteSubtask = (listIndex, subtaskId) => {
-    // Clear any existing list undo when deleting a subtask
     setLastDeleted(null);
     clearTimeout(undoTimeoutRef.current);
 
@@ -293,7 +328,6 @@ export default function TodoListsPage() {
       const originalIndex = currentSubtasks.findIndex(subtask => subtask.id === subtaskId);
       
       if (subtaskToDelete) {
-        // Store the deleted subtask for undo
         setLastDeletedSubtask({
           subtask: subtaskToDelete,
           listIndex: listIndex,
@@ -301,7 +335,6 @@ export default function TodoListsPage() {
           listName: lists[listIndex]
         });
 
-        // Set timeout to clear undo option
         clearTimeout(subtaskUndoTimeoutRef.current);
         subtaskUndoTimeoutRef.current = setTimeout(() => {
           setLastDeletedSubtask(null);
@@ -348,11 +381,13 @@ export default function TodoListsPage() {
         <button
           onClick={() => setShowAddModal(true)}
           className="bg-gray-300 text-black px-4 py-2 rounded-full font-semibold hover:bg-gray-400"
+          title="Add List (Ctrl + N)"
         >
           + Add List
         </button>
       </div>
 
+    
       {/* Main Content */}
       <div className="flex-1 px-8 flex items-center relative">
         <AnimatePresence custom={direction} mode="wait">
@@ -397,6 +432,7 @@ export default function TodoListsPage() {
                         (task) => task.completed
                       ).length;
                       const isHighlighted = selectedListIndex === globalIndex;
+                      const isHovered = hoveredListIndex === globalIndex; // NEW: Check if hovered
 
                       return (
                         <TodoList
@@ -411,6 +447,9 @@ export default function TodoListsPage() {
                           onToggleSubtaskComplete={toggleSubtaskComplete}
                           onDeleteSubtask={deleteSubtask}
                           isHighlighted={isHighlighted}
+                          isHovered={isHovered} // NEW: Pass hover state
+                          onHover={handleListHover} // NEW: Pass hover handler
+                          onLeave={handleListLeave} // NEW: Pass leave handler
                         />
                       );
                     })}
@@ -490,7 +529,7 @@ export default function TodoListsPage() {
         onUndo={handleUndo}
       />
 
-      {/* NEW: Subtask Undo Snackbar */}
+      {/* Subtask Undo Snackbar */}
       <AnimatePresence>
         {lastDeletedSubtask && (
           <motion.div
