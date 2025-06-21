@@ -10,6 +10,59 @@ const generateToken = (userId) => {
   return jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn: '7d' });
 };
 
+// @route   PUT /api/auth/change-password
+// @desc    Change user password
+// @access  Private
+router.put('/change-password', auth, async (req, res) => {
+  try {
+    const { oldPassword, newPassword } = req.body;
+
+    console.log('🔐 Change password request for user:', req.user._id);
+
+    // Validation
+    if (!oldPassword || !newPassword) {
+      return res.status(400).json({ error: 'Old password and new password are required' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'New password must be at least 6 characters' });
+    }
+
+    // Get user from database
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Check if old password is correct
+    const bcrypt = require('bcryptjs');
+    const isMatch = await bcrypt.compare(oldPassword, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ error: 'Current password is incorrect' });
+    }
+
+    // Hash new password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+    // Update password in database
+    await User.findByIdAndUpdate(req.user._id, {
+      password: hashedPassword
+    });
+
+    console.log('✅ Password changed successfully for user:', req.user._id);
+
+    res.json({
+      success: true,
+      message: 'Password changed successfully'
+    });
+  } catch (error) {
+    console.error('❌ Change password error:', error);
+    res.status(500).json({ error: 'Server error while changing password' });
+  }
+});
+
+
 router.get('/me', auth, async (req, res) => {
   try {
     res.json({
