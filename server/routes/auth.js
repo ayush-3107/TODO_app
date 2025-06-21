@@ -10,6 +10,22 @@ const generateToken = (userId) => {
   return jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn: '7d' });
 };
 
+router.get('/me', auth, async (req, res) => {
+  try {
+    res.json({
+      user: {
+        id: req.user._id,
+        username: req.user.username,
+        email: req.user.email,
+        createdAt: req.user.createdAt
+      }
+    });
+  } catch (error) {
+    console.error('Get user error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // @route   POST /api/auth/register
 router.post('/register', async (req, res) => {
   try {

@@ -6,28 +6,27 @@ import TodoList from "../components/TodoList";
 import { AddListModal, AddTaskModal, DeleteModal } from "../components/Modals";
 import { UndoSnackbar } from "../components/UI";
 import SearchBar from "../components/SearchBar/SearchBar";
-import { ProfileIcon, ProfilePage } from "../components/Profile"; // NEW: Import Profile components
+import { ProfileIcon, ProfilePage } from "../components/Profile";
+import { useAuth } from "../contexts/AuthContext.jsx";
+import { listsAPI, tasksAPI } from "../services/api";
 
-const dummyLists = [
-  "Study for exams",
-  "Grocery shopping",
-  "Workout routine",
-  "Read a book",
-  "Plan vacation",
-  "Clean the house",
-  "Prepare presentation",
-  "Organize files",
-];
+export default function TodoListsPage() {
+  const { user, logout, changePassword } = useAuth();
 
-export default function TodoListsPage({ user, onLogout }) { // NEW: Accept user and onLogout props
-  const [lists, setLists] = useState(dummyLists);
+  // State for real data from backend
+  const [lists, setLists] = useState([]);
   const [subtasks, setSubtasks] = useState({});
+  const [listIdMapping, setListIdMapping] = useState({}); // Maps array index to actual list ID
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  // UI state
   const [currentPage, setCurrentPage] = useState(0);
   const [selectedIndex, setSelectedIndex] = useState(null);
   const [direction, setDirection] = useState(0);
   const [selectedListIndex, setSelectedListIndex] = useState(null);
   const [hoveredListIndex, setHoveredListIndex] = useState(null);
-  const [showProfile, setShowProfile] = useState(false); // NEW: Profile state
+  const [showProfile, setShowProfile] = useState(false);
 
   // Modal states
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -50,82 +49,227 @@ export default function TodoListsPage({ user, onLogout }) { // NEW: Accept user 
   const startIndex = currentPage * listsPerPage;
   const visibleLists = lists.slice(startIndex, startIndex + listsPerPage);
 
-  // NEW: Profile handlers
-  const handleChangePassword = (oldPassword, newPassword) => {
-    // Here you would call your API to change password
-    console.log('Password change requested:', { oldPassword, newPassword });
-    alert('Password changed successfully!');
-  };
-
-  // Keyboard shortcuts handler
+  // Fetch data from API
   useEffect(() => {
-    const handleKeyDown = (event) => {
-      // Ctrl + N: Add new list
-      if (event.ctrlKey && event.key === 'n') {
-        event.preventDefault();
-        setShowAddModal(true);
-      }
-      
-      // Ctrl + Shift + Backspace: Delete hovered list
-      if (event.ctrlKey && event.shiftKey && event.key === 'Backspace') {
-        event.preventDefault();
-        if (hoveredListIndex !== null) {
-          const listName = lists[hoveredListIndex];
-          if (listName) {
-            handleDeleteList(hoveredListIndex, listName);
-          }
+    fetchLists();
+  }, []);
+
+  const fetchLists = async () => {
+    try {
+      setLoading(true);
+      const response = await listsAPI.getAll();
+      const listsData = response.data.data;
+
+      // Create mapping of array index to actual list ID
+      const idMapping = {};
+      listsData.forEach((list, index) => {
+        idMapping[index] = list._id;
+      });
+      setListIdMapping(idMapping);
+
+      setLists(listsData.map((list) => list.name));
+
+      // Fetch tasks for each list
+      const tasksData = {};
+      for (let i = 0; i < listsData.length; i++) {
+        const list = listsData[i];
+        try {
+          const tasksResponse = await tasksAPI.getByList(list._id);
+          tasksData[i] = tasksResponse.data.data.map((task) => ({
+            id: task._id,
+            name: task.name,
+            completed: task.completed,
+            deadline: task.deadline,
+            createdAt: task.createdAt,
+          }));
+        } catch (error) {
+          console.error(`Error fetching tasks for list ${list._id}:`, error);
+          tasksData[i] = [];
         }
       }
-    };
 
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [hoveredListIndex, lists]);
-
-  const handleListHover = (listIndex) => {
-    setHoveredListIndex(listIndex);
-  };
-
-  const handleListLeave = () => {
-    setHoveredListIndex(null);
-  };
-
-  // Handle navigation from search
-  const handleSearchNavigation = (listIndex, page) => {
-    if (page !== currentPage) {
-      setDirection(page > currentPage ? 1 : -1);
-      setCurrentPage(page);
+      setSubtasks(tasksData);
+      setError(null);
+    } catch (error) {
+      console.error("Error fetching lists:", error);
+      setError("Failed to load lists. Please try again.");
+    } finally {
+      setLoading(false);
     }
-    
-    setSelectedListIndex(listIndex);
-    
-    clearTimeout(highlightTimeoutRef.current);
-    highlightTimeoutRef.current = setTimeout(() => {
-      setSelectedListIndex(null);
-    }, 2000);
   };
 
-  // ... (keep all your existing functions: onDragEnd, handleListReorder, handleSubtaskMove, etc.)
-  const onDragEnd = (result) => {
+  // Profile handlers
+  const handleChangePassword = async (oldPassword, newPassword) => {
+    const result = await changePassword({ oldPassword, newPassword });
+    if (result.success) {
+      alert("Password changed successfully!");
+    } else {
+      alert(`Error: ${result.error}`);
+    }
+  };
+
+  // COMPLETE DRAG AND DROP IMPLEMENTATION
+  const onDragEnd = async (result) => {
     const { destination, source, type } = result;
 
+    // If dropped outside a droppable area
     if (!destination) return;
+
+    // If dropped in the same position
     if (
       destination.droppableId === source.droppableId &&
       destination.index === source.index
-    )
-      return;
+    ) return;
 
-    setTimeout(() => {
-      if (type === "list") {
-        handleListReorder(source, destination);
-      } else if (type === "subtask") {
-        handleSubtaskMove(source, destination);
+    console.log('Drag result:', result);
+
+    try {
+      if (type === "subtask") {
+        // Handle task movement between lists
+        await handleTaskMove(source, destination);
+      } else if (type === "list") {
+        // Handle list reordering (simplified - just local state for now)
+        handleListReorderLocal(source, destination);
       }
-    }, 0);
+    } catch (error) {
+      console.error('Drag and drop error:', error);
+      console.log('Drag operation failed, but continuing...');
+    }
   };
 
-  const handleListReorder = (source, destination) => {
+  // COMPLETE TASK MOVE FUNCTION WITH COMPREHENSIVE DEBUGGING
+  const handleTaskMove = async (source, destination) => {
+    const sourceListIndex = parseInt(source.droppableId.replace("subtasks-", ""));
+    const destListIndex = parseInt(destination.droppableId.replace("subtasks-", ""));
+    
+    const sourceListId = listIdMapping[sourceListIndex];
+    const destListId = listIdMapping[destListIndex];
+
+    console.log('🔄 DRAG DEBUG - Starting task move:', {
+      sourceListIndex,
+      destListIndex,
+      sourceListId,
+      destListId,
+      sourceIndex: source.index,
+      destIndex: destination.index
+    });
+
+    if (!sourceListId || !destListId) {
+      console.error('❌ Could not find list IDs:', { sourceListId, destListId });
+      alert('Error: Could not find list IDs. Please refresh and try again.');
+      return;
+    }
+
+    // Get the task being moved
+    const sourceTasks = [...(subtasks[sourceListIndex] || [])];
+    const taskToMove = sourceTasks[source.index];
+
+    if (!taskToMove) {
+      console.error('❌ Task not found at index:', source.index);
+      alert('Error: Task not found.');
+      return;
+    }
+
+    console.log('📋 Task to move:', {
+      taskId: taskToMove.id,
+      taskName: taskToMove.name,
+      fromList: lists[sourceListIndex],
+      toList: lists[destListIndex]
+    });
+
+    // Store original state for rollback
+    const originalSubtasks = { ...subtasks };
+
+    // Update local state immediately for better UX
+    setSubtasks(prev => {
+      const newSubtasks = { ...prev };
+      
+      // Remove from source list
+      const newSourceTasks = [...(prev[sourceListIndex] || [])];
+      newSourceTasks.splice(source.index, 1);
+      newSubtasks[sourceListIndex] = newSourceTasks;
+      
+      // Add to destination list
+      const newDestTasks = [...(prev[destListIndex] || [])];
+      newDestTasks.splice(destination.index, 0, taskToMove);
+      newSubtasks[destListIndex] = newDestTasks;
+      
+      console.log('🔄 Local state updated');
+      return newSubtasks;
+    });
+
+    try {
+      // If moving between different lists, update the task's list in backend
+      if (sourceListIndex !== destListIndex) {
+        console.log('📡 Making API call to update task listId...');
+        
+        const updateData = { 
+          listId: destListId  // This should match your backend field expectation
+        };
+        
+        console.log('📤 Sending update data:', updateData);
+        console.log('📤 To endpoint: PUT /api/tasks/' + taskToMove.id);
+        
+        const response = await tasksAPI.update(taskToMove.id, updateData);
+        
+        console.log('📥 Backend response:', response.data);
+        
+        if (response.data.success) {
+          console.log('✅ Task listId updated successfully in database');
+          console.log('✅ Updated task data:', response.data.data);
+        } else {
+          throw new Error('Backend returned success: false');
+        }
+
+        // Verify the update worked by checking the task in the new list
+        setTimeout(async () => {
+          try {
+            console.log('🔍 Verifying task move...');
+            const verifyResponse = await tasksAPI.getByList(destListId);
+            const movedTask = verifyResponse.data.data.find(t => t._id === taskToMove.id);
+            
+            if (movedTask) {
+              console.log('✅ Verification successful - Task found in new list');
+              console.log('✅ Task list field:', movedTask.list);
+            } else {
+              console.log('❌ Verification failed - Task not found in new list');
+            }
+          } catch (verifyError) {
+            console.log('❌ Verification request failed:', verifyError);
+          }
+        }, 1000);
+
+      } else {
+        console.log('🔄 Task moved within same list - no backend update needed');
+      }
+
+      console.log(`🎉 Task "${taskToMove.name}" successfully moved from "${lists[sourceListIndex]}" to "${lists[destListIndex]}"`);
+
+    } catch (error) {
+      console.error('❌ Error moving task:', error);
+      console.error('❌ Error details:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status
+      });
+
+      // Revert local state on error
+      console.log('🔄 Reverting local state due to error...');
+      setSubtasks(originalSubtasks);
+      
+      // Show user-friendly error message
+      const errorMessage = error.response?.data?.error || error.message || 'Unknown error occurred';
+      alert(`Failed to move task: ${errorMessage}`);
+      
+      // Optional: Refresh data from server to ensure consistency
+      setTimeout(() => {
+        console.log('🔄 Refreshing data from server...');
+        fetchLists();
+      }, 1000);
+    }
+  };
+
+  const handleListReorderLocal = (source, destination) => {
     const sourceIndex = source.index;
     const destIndex = destination.index;
     const sourceGlobalIndex = startIndex + sourceIndex;
@@ -136,14 +280,17 @@ export default function TodoListsPage({ user, onLogout }) { // NEW: Accept user 
       sourceGlobalIndex >= lists.length ||
       destGlobalIndex < 0 ||
       destGlobalIndex >= lists.length
-    )
-      return;
+    ) return;
 
+    // Update local state only (no backend call for now)
     const reorderedLists = Array.from(lists);
     const [movedList] = reorderedLists.splice(sourceGlobalIndex, 1);
     reorderedLists.splice(destGlobalIndex, 0, movedList);
 
+    // Update subtasks mapping
     const newSubtasks = {};
+    const newListIdMapping = {};
+    
     Object.keys(subtasks).forEach((key) => {
       const oldIndex = parseInt(key);
       let newIndex = oldIndex;
@@ -163,120 +310,266 @@ export default function TodoListsPage({ user, onLogout }) { // NEW: Accept user 
       if (subtasks[oldIndex]) {
         newSubtasks[newIndex] = subtasks[oldIndex];
       }
+      if (listIdMapping[oldIndex]) {
+        newListIdMapping[newIndex] = listIdMapping[oldIndex];
+      }
     });
 
     setLists(reorderedLists);
     setSubtasks(newSubtasks);
+    setListIdMapping(newListIdMapping);
+
+    console.log('Lists reordered locally');
   };
 
-  const handleSubtaskMove = (source, destination) => {
-    const sourceListId = parseInt(source.droppableId.replace("subtasks-", ""));
-    const destListId = parseInt(
-      destination.droppableId.replace("subtasks-", "")
-    );
-    const newSubtasks = { ...subtasks };
-
-    if (sourceListId === destListId) {
-      const listSubtasks = Array.from(newSubtasks[sourceListId] || []);
-      const [movedSubtask] = listSubtasks.splice(source.index, 1);
-      listSubtasks.splice(destination.index, 0, movedSubtask);
-      newSubtasks[sourceListId] = listSubtasks;
-    } else {
-      const sourceSubtasks = Array.from(newSubtasks[sourceListId] || []);
-      const destSubtasks = Array.from(newSubtasks[destListId] || []);
-      const [movedSubtask] = sourceSubtasks.splice(source.index, 1);
-      destSubtasks.splice(destination.index, 0, movedSubtask);
-      newSubtasks[sourceListId] = sourceSubtasks;
-      newSubtasks[destListId] = destSubtasks;
-    }
-
-    setSubtasks(newSubtasks);
-  };
-
-  const addList = () => {
+  // Real API calls for CRUD operations
+  const addList = async () => {
     if (newListName.trim()) {
-      setLists((prev) => [...prev, newListName.trim()]);
-      setNewListName("");
-      setShowAddModal(false);
+      try {
+        const response = await listsAPI.create({ 
+          name: newListName.trim(),
+          color: '#334155'
+        });
+
+        const newList = response.data.data;
+
+        // Update local state
+        setLists(prev => [...prev, newList.name]);
+        setSubtasks(prev => ({ ...prev, [lists.length]: [] }));
+        
+        // Update ID mapping
+        setListIdMapping(prev => ({
+          ...prev,
+          [lists.length]: newList._id
+        }));
+
+        setNewListName("");
+        setShowAddModal(false);
+
+        console.log('List created successfully:', newList.name);
+      } catch (error) {
+        console.error('Error creating list:', error);
+        alert(`Failed to create list: ${error.response?.data?.error || error.message}`);
+      }
     }
   };
 
-  const handleDeleteList = (index, name) => {
-    setListToDelete({ index, name });
-    setShowDeleteModal(true);
-  };
-
-  const confirmDelete = () => {
-    const { index, name } = listToDelete;
-    const deletedListSubtasks = subtasks[index] || [];
-
-    const newList = [...lists];
-    newList.splice(index, 1);
-    setLists(newList);
-
-    setSubtasks((prev) => {
-      const newSubtasks = {};
-      Object.keys(prev).forEach((key) => {
-        const oldIndex = parseInt(key);
-        if (oldIndex < index) {
-          newSubtasks[oldIndex] = prev[oldIndex];
-        } else if (oldIndex > index) {
-          newSubtasks[oldIndex - 1] = prev[oldIndex];
+  const addSubtask = async () => {
+    if (newSubtaskName.trim() && currentListIndex !== null) {
+      try {
+        // Get the actual list ID from our mapping
+        const actualListId = listIdMapping[currentListIndex];
+        
+        if (!actualListId) {
+          alert('Error: Could not find list ID. Please refresh and try again.');
+          return;
         }
-      });
-      return newSubtasks;
-    });
 
-    setShowDeleteModal(false);
-    setLastDeleted({ name, index, subtasks: deletedListSubtasks });
+        const taskData = {
+          name: newSubtaskName.trim(),
+          listId: actualListId,
+          deadline: newSubtaskDeadline || null,
+          priority: 'medium'
+        };
 
-    clearTimeout(undoTimeoutRef.current);
-    undoTimeoutRef.current = setTimeout(() => setLastDeleted(null), 5000);
+        const response = await tasksAPI.create(taskData);
+        const newTask = response.data.data;
+
+        // Add to local state immediately for better UX
+        setSubtasks(prev => ({
+          ...prev,
+          [currentListIndex]: [
+            ...(prev[currentListIndex] || []),
+            {
+              id: newTask._id,
+              name: newTask.name,
+              completed: newTask.completed,
+              deadline: newTask.deadline,
+              createdAt: newTask.createdAt
+            }
+          ]
+        }));
+
+        // Clear form and close modal
+        setNewSubtaskName("");
+        setNewSubtaskDeadline("");
+        setShowSubtaskModal(false);
+        setCurrentListIndex(null);
+
+        console.log('Task created successfully:', newTask);
+      } catch (error) {
+        console.error('Error creating task:', error);
+        alert(`Failed to create task: ${error.response?.data?.error || error.message}`);
+      }
+    }
   };
 
-  const handleUndo = () => {
-    if (lastDeleted) {
-      const { name, index, subtasks: deletedSubtasks } = lastDeleted;
+  const handleDeleteList = async (index, name) => {
+    try {
+      const actualListId = listIdMapping[index];
+      
+      if (!actualListId) {
+        alert('Error: Could not find list ID. Please refresh and try again.');
+        return;
+      }
 
+      // Delete from backend
+      await listsAPI.delete(actualListId);
+
+      // Update local state
+      const deletedListSubtasks = subtasks[index] || [];
       const newList = [...lists];
-      newList.splice(index, 0, name);
+      newList.splice(index, 1);
       setLists(newList);
 
+      // Update subtasks mapping
       setSubtasks((prev) => {
         const newSubtasks = {};
         Object.keys(prev).forEach((key) => {
-          const currentIndex = parseInt(key);
-          if (currentIndex < index) {
-            newSubtasks[currentIndex] = prev[currentIndex];
-          } else {
-            newSubtasks[currentIndex + 1] = prev[currentIndex];
+          const oldIndex = parseInt(key);
+          if (oldIndex < index) {
+            newSubtasks[oldIndex] = prev[oldIndex];
+          } else if (oldIndex > index) {
+            newSubtasks[oldIndex - 1] = prev[oldIndex];
           }
         });
-        newSubtasks[index] = deletedSubtasks;
         return newSubtasks;
       });
 
-      setLastDeleted(null);
+      // Update ID mapping
+      setListIdMapping(prev => {
+        const newMapping = {};
+        Object.keys(prev).forEach(key => {
+          const oldIndex = parseInt(key);
+          if (oldIndex < index) {
+            newMapping[oldIndex] = prev[oldIndex];
+          } else if (oldIndex > index) {
+            newMapping[oldIndex - 1] = prev[oldIndex];
+          }
+        });
+        return newMapping;
+      });
+
+      setLastDeleted({ name, index, subtasks: deletedListSubtasks, listId: actualListId });
+
       clearTimeout(undoTimeoutRef.current);
+      undoTimeoutRef.current = setTimeout(() => setLastDeleted(null), 5000);
+
+      console.log('List deleted successfully:', name);
+    } catch (error) {
+      console.error('Error deleting list:', error);
+      alert(`Failed to delete list: ${error.response?.data?.error || error.message}`);
     }
   };
 
-  const handleUndoSubtask = () => {
+  const confirmDelete = () => {
+    if (listToDelete) {
+      handleDeleteList(listToDelete.index, listToDelete.name);
+      setShowDeleteModal(false);
+      setListToDelete(null);
+    }
+  };
+
+  const handleUndo = async () => {
+    if (lastDeleted) {
+      try {
+        // Recreate the list in the backend
+        const response = await listsAPI.create({ 
+          name: lastDeleted.name,
+          color: '#334155'
+        });
+
+        const restoredList = response.data.data;
+        const { name, index } = lastDeleted;
+
+        // Update local state
+        const newList = [...lists];
+        newList.splice(index, 0, name);
+        setLists(newList);
+
+        // Update subtasks
+        setSubtasks((prev) => {
+          const newSubtasks = {};
+          Object.keys(prev).forEach((key) => {
+            const currentIndex = parseInt(key);
+            if (currentIndex < index) {
+              newSubtasks[currentIndex] = prev[currentIndex];
+            } else {
+              newSubtasks[currentIndex + 1] = prev[currentIndex];
+            }
+          });
+          newSubtasks[index] = []; // Start with empty tasks for restored list
+          return newSubtasks;
+        });
+
+        // Update ID mapping
+        setListIdMapping(prev => {
+          const newMapping = {};
+          Object.keys(prev).forEach(key => {
+            const currentIndex = parseInt(key);
+            if (currentIndex < index) {
+              newMapping[currentIndex] = prev[currentIndex];
+            } else {
+              newMapping[currentIndex + 1] = prev[currentIndex];
+            }
+          });
+          newMapping[index] = restoredList._id;
+          return newMapping;
+        });
+
+        setLastDeleted(null);
+        clearTimeout(undoTimeoutRef.current);
+
+        console.log('List restored successfully:', name);
+      } catch (error) {
+        console.error('Error restoring list:', error);
+        alert('Failed to restore list. Please try again.');
+      }
+    }
+  };
+
+  const handleUndoSubtask = async () => {
     if (lastDeletedSubtask) {
-      const { subtask, listIndex, originalIndex } = lastDeletedSubtask;
+      try {
+        const { subtask, listIndex, originalIndex } = lastDeletedSubtask;
+        const actualListId = listIdMapping[listIndex];
 
-      setSubtasks(prev => {
-        const currentSubtasks = [...(prev[listIndex] || [])];
-        currentSubtasks.splice(originalIndex, 0, subtask);
-        
-        return {
-          ...prev,
-          [listIndex]: currentSubtasks
+        // Recreate the task in the backend
+        const taskData = {
+          name: subtask.name,
+          listId: actualListId,
+          deadline: subtask.deadline,
+          priority: 'medium'
         };
-      });
 
-      setLastDeletedSubtask(null);
-      clearTimeout(subtaskUndoTimeoutRef.current);
+        const response = await tasksAPI.create(taskData);
+        const restoredTask = response.data.data;
+
+        // Update local state
+        setSubtasks(prev => {
+          const currentSubtasks = [...(prev[listIndex] || [])];
+          currentSubtasks.splice(originalIndex, 0, {
+            id: restoredTask._id,
+            name: restoredTask.name,
+            completed: restoredTask.completed,
+            deadline: restoredTask.deadline,
+            createdAt: restoredTask.createdAt
+          });
+          
+          return {
+            ...prev,
+            [listIndex]: currentSubtasks
+          };
+        });
+
+        setLastDeletedSubtask(null);
+        clearTimeout(subtaskUndoTimeoutRef.current);
+
+        console.log('Task restored successfully:', restoredTask.name);
+      } catch (error) {
+        console.error('Error restoring task:', error);
+        alert('Failed to restore task. Please try again.');
+      }
     }
   };
 
@@ -285,68 +578,95 @@ export default function TodoListsPage({ user, onLogout }) { // NEW: Accept user 
     setShowSubtaskModal(true);
   };
 
-  const addSubtask = () => {
-    if (newSubtaskName.trim() && currentListIndex !== null) {
-      const newSubtask = {
-        id: Date.now(),
-        name: newSubtaskName.trim(),
-        deadline: newSubtaskDeadline || null,
-        completed: false,
-        createdAt: new Date().toISOString(),
-      };
+  const toggleSubtaskComplete = async (listIndex, subtaskId) => {
+    try {
+      // Call API to toggle completion
+      const response = await tasksAPI.toggle(subtaskId);
+      const updatedTask = response.data.data;
 
+      // Update local state
       setSubtasks((prev) => ({
         ...prev,
-        [currentListIndex]: [...(prev[currentListIndex] || []), newSubtask],
+        [listIndex]:
+          prev[listIndex]?.map((subtask) =>
+            subtask.id === subtaskId
+              ? { ...subtask, completed: updatedTask.completed }
+              : subtask
+          ) || [],
       }));
 
-      setNewSubtaskName("");
-      setNewSubtaskDeadline("");
-      setShowSubtaskModal(false);
-      setCurrentListIndex(null);
+      console.log(`Task ${updatedTask.completed ? 'completed' : 'uncompleted'}:`, updatedTask.name);
+    } catch (error) {
+      console.error('Error toggling task completion:', error);
+      alert('Failed to update task. Please try again.');
     }
   };
 
-  const toggleSubtaskComplete = (listIndex, subtaskId) => {
-    setSubtasks((prev) => ({
-      ...prev,
-      [listIndex]:
-        prev[listIndex]?.map((subtask) =>
-          subtask.id === subtaskId
-            ? { ...subtask, completed: !subtask.completed }
-            : subtask
-        ) || [],
-    }));
-  };
+  const deleteSubtask = async (listIndex, subtaskId) => {
+    try {
+      // Clear any existing undo for lists
+      setLastDeleted(null);
+      clearTimeout(undoTimeoutRef.current);
 
-  const deleteSubtask = (listIndex, subtaskId) => {
-    setLastDeleted(null);
-    clearTimeout(undoTimeoutRef.current);
-
-    setSubtasks((prev) => {
-      const currentSubtasks = prev[listIndex] || [];
+      // Get the task details before deletion for undo functionality
+      const currentSubtasks = subtasks[listIndex] || [];
       const subtaskToDelete = currentSubtasks.find(subtask => subtask.id === subtaskId);
       const originalIndex = currentSubtasks.findIndex(subtask => subtask.id === subtaskId);
       
-      if (subtaskToDelete) {
-        setLastDeletedSubtask({
-          subtask: subtaskToDelete,
-          listIndex: listIndex,
-          originalIndex: originalIndex,
-          listName: lists[listIndex]
-        });
-
-        clearTimeout(subtaskUndoTimeoutRef.current);
-        subtaskUndoTimeoutRef.current = setTimeout(() => {
-          setLastDeletedSubtask(null);
-        }, 5000);
+      if (!subtaskToDelete) {
+        alert('Task not found');
+        return;
       }
 
-      return {
+      // Delete from backend
+      await tasksAPI.delete(subtaskId);
+
+      // Update local state
+      setSubtasks((prev) => ({
         ...prev,
         [listIndex]: currentSubtasks.filter((subtask) => subtask.id !== subtaskId),
-      };
-    });
+      }));
+
+      // Set up undo functionality
+      setLastDeletedSubtask({
+        subtask: subtaskToDelete,
+        listIndex: listIndex,
+        originalIndex: originalIndex,
+        listName: lists[listIndex]
+      });
+
+      clearTimeout(subtaskUndoTimeoutRef.current);
+      subtaskUndoTimeoutRef.current = setTimeout(() => {
+        setLastDeletedSubtask(null);
+      }, 5000);
+
+      console.log('Task deleted successfully:', subtaskToDelete.name);
+    } catch (error) {
+      console.error('Error deleting task:', error);
+      alert('Failed to delete task. Please try again.');
+    }
+  };
+
+  const handleListHover = (listIndex) => {
+    setHoveredListIndex(listIndex);
+  };
+
+  const handleListLeave = () => {
+    setHoveredListIndex(null);
+  };
+
+  const handleSearchNavigation = (listIndex, page) => {
+    if (page !== currentPage) {
+      setDirection(page > currentPage ? 1 : -1);
+      setCurrentPage(page);
+    }
+    
+    setSelectedListIndex(listIndex);
+    
+    clearTimeout(highlightTimeoutRef.current);
+    highlightTimeoutRef.current = setTimeout(() => {
+      setSelectedListIndex(null);
+    }, 2000);
   };
 
   const changePage = (newPage) => {
@@ -357,6 +677,59 @@ export default function TodoListsPage({ user, onLogout }) { // NEW: Accept user 
     }
   };
 
+  // Keyboard shortcuts handler
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.ctrlKey && event.key === "n") {
+        event.preventDefault();
+        setShowAddModal(true);
+      }
+
+      if (event.ctrlKey && event.shiftKey && event.key === "Backspace") {
+        event.preventDefault();
+        if (hoveredListIndex !== null) {
+          const listName = lists[hoveredListIndex];
+          if (listName) {
+            setListToDelete({ index: hoveredListIndex, name: listName });
+            setShowDeleteModal(true);
+          }
+        }
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [hoveredListIndex, lists]);
+
+  // Show loading state
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0f172a] text-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p className="text-lg">Loading your todo lists...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error state
+  if (error) {
+    return (
+      <div className="min-h-screen bg-[#0f172a] text-white flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-red-400 text-lg mb-4">{error}</p>
+          <button
+            onClick={fetchLists}
+            className="px-4 py-2 bg-blue-500 hover:bg-blue-600 rounded-lg"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const containerVariants = {
     enter: (dir) => ({ x: dir > 0 ? 1000 : -1000, opacity: 0 }),
     center: { x: 0, opacity: 1 },
@@ -365,14 +738,22 @@ export default function TodoListsPage({ user, onLogout }) { // NEW: Accept user 
 
   return (
     <div className="min-h-screen bg-[#0f172a] text-white flex flex-col relative">
-      {/* UPDATED: Header with Profile Icon */}
-      <div className="flex justify-between items-center px-6 py-4" style={{ position: 'relative', zIndex: 100000 }}>
+      {/* Header with Profile Icon */}
+      <div
+        className="flex justify-between items-center px-6 py-4"
+        style={{ position: "relative", zIndex: 100000 }}
+      >
         <div className="flex items-center">
           <ProfileIcon onClick={() => setShowProfile(true)} />
-          <h2 className="text-2xl font-bold">Welcome, {user?.username || 'User'}</h2>
-        </div>  
+          <h2 className="text-2xl font-bold">
+            Welcome, {user?.username || "User"}
+          </h2>
+        </div>
 
-        <div className="absolute left-1/2 transform -translate-x-1/2" style={{ zIndex: 100000 }}>
+        <div
+          className="absolute left-1/2 transform -translate-x-1/2"
+          style={{ zIndex: 100000 }}
+        >
           <SearchBar
             lists={lists}
             subtasks={subtasks}
@@ -380,9 +761,12 @@ export default function TodoListsPage({ user, onLogout }) { // NEW: Accept user 
             listsPerPage={listsPerPage}
           />
         </div>
-        
+
         <button
-          onClick={() => setShowAddModal(true)}
+          onClick={() => {
+            console.log("Add List button clicked!");
+            setShowAddModal(true);
+          }}
           className="bg-gray-300 text-black px-4 py-2 rounded-full font-semibold hover:bg-gray-400"
           title="Add List (Ctrl + N)"
         >
@@ -452,7 +836,10 @@ export default function TodoListsPage({ user, onLogout }) { // NEW: Accept user 
                           index={index}
                           listSubtasks={listSubtasks}
                           completedCount={completedCount}
-                          onDelete={handleDeleteList}
+                          onDelete={(index, name) => {
+                            setListToDelete({ index, name });
+                            setShowDeleteModal(true);
+                          }}
                           onAddTask={handleAddTask}
                           onToggleSubtaskComplete={toggleSubtaskComplete}
                           onDeleteSubtask={deleteSubtask}
@@ -532,13 +919,13 @@ export default function TodoListsPage({ user, onLogout }) { // NEW: Accept user 
         onAdd={addSubtask}
       />
 
-      {/* NEW: Profile Page */}
-      {showProfile && user &&(
+      {/* Profile Page */}
+      {showProfile && (
         <ProfilePage
           user={user}
           onClose={() => setShowProfile(false)}
           onChangePassword={handleChangePassword}
-          onLogout={onLogout}
+          onLogout={logout}
         />
       )}
 
