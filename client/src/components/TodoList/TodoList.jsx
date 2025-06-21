@@ -25,30 +25,26 @@ const TodoList = ({
     >
       {(provided, snapshot) => (
         <div
-  ref={provided.innerRef}
-  {...provided.draggableProps}
-  onMouseEnter={() => onHover && onHover(globalIndex)}
-  onMouseLeave={() => onLeave && onLeave()}
-  className={`relative h-[80vh] cursor-pointer rounded-2xl transition-all duration-300 group
-    ${isHighlighted 
-      ? "border-[2px] border-transparent bg-gradient-to-r from-blue-500 to-purple-500 bg-origin-border" 
-      : "border border-transparent hover:border-[2px] hover:border-transparent hover:bg-gradient-to-r hover:from-blue-500 hover:to-purple-500 hover:bg-origin-border"
-    }
-    ${snapshot.isDragging ? "shadow-2xl scale-105 z-[9999]" : ""}
-  `}
-  // Remove the yellow ring styling completely
-  style={{
-    ...provided.draggableProps.style,
-    transform: snapshot.isDragging 
-      ? `${provided.draggableProps.style?.transform || ''} rotate(2deg)` 
-      : provided.draggableProps.style?.transform || 'none',
-    position: snapshot.isDragging ? 'fixed' : 'relative',
-    zIndex: snapshot.isDragging ? 9999 : 'auto'
-  }}
->
-
-          {/* REMOVED: Yellow message that was showing keyboard shortcut */}
-
+          ref={provided.innerRef}
+          {...provided.draggableProps}
+          onMouseEnter={() => onHover && onHover(globalIndex)}
+          onMouseLeave={() => onLeave && onLeave()}
+          className={`relative h-[80vh] cursor-pointer rounded-2xl transition-all duration-300 group
+            ${isHighlighted 
+              ? "border-[2px] border-transparent bg-gradient-to-r from-blue-500 to-purple-500 bg-origin-border" 
+              : "border border-transparent hover:border-[2px] hover:border-transparent hover:bg-gradient-to-r hover:from-blue-500 hover:to-purple-500 hover:bg-origin-border"
+            }
+            ${snapshot.isDragging ? "shadow-2xl scale-105 z-[9999]" : ""}
+          `}
+          style={{
+            ...provided.draggableProps.style,
+            transform: snapshot.isDragging 
+              ? `${provided.draggableProps.style?.transform || ''} rotate(2deg)` 
+              : provided.draggableProps.style?.transform || 'none',
+            position: snapshot.isDragging ? 'fixed' : 'relative',
+            zIndex: snapshot.isDragging ? 9999 : 'auto'
+          }}
+        >
           {/* Delete Icon */}
           <div
             onClick={(e) => {
@@ -138,7 +134,7 @@ const TodoList = ({
                     <div className="space-y-2">
                       {listSubtasks.map((subtask, subtaskIndex) => (
                         <Subtask
-                          key={subtask.id}
+                          key={`${subtask.id}-${globalIndex}`} // ✅ FIXED: More unique key
                           subtask={subtask}
                           index={subtaskIndex}
                           listIndex={globalIndex}

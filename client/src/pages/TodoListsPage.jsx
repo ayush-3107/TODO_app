@@ -100,11 +100,16 @@ export default function TodoListsPage() {
 
   // Profile handlers
   const handleChangePassword = async (oldPassword, newPassword) => {
-    const result = await changePassword({ oldPassword, newPassword });
-    if (result.success) {
-      alert("Password changed successfully!");
-    } else {
-      alert(`Error: ${result.error}`);
+    try {
+      const result = await changePassword({ oldPassword, newPassword });
+      if (result.success) {
+        alert("Password changed successfully!");
+      } else {
+        alert(`Error: ${result.error}`);
+      }
+    } catch (error) {
+      console.error("Change password error:", error);
+      alert(`Error: ${error.response?.data?.error || error.message}`);
     }
   };
 
@@ -119,9 +124,10 @@ export default function TodoListsPage() {
     if (
       destination.droppableId === source.droppableId &&
       destination.index === source.index
-    ) return;
+    )
+      return;
 
-    console.log('Drag result:', result);
+    console.log("Drag result:", result);
 
     try {
       if (type === "subtask") {
@@ -132,31 +138,38 @@ export default function TodoListsPage() {
         handleListReorderLocal(source, destination);
       }
     } catch (error) {
-      console.error('Drag and drop error:', error);
-      console.log('Drag operation failed, but continuing...');
+      console.error("Drag and drop error:", error);
+      console.log("Drag operation failed, but continuing...");
     }
   };
 
   // COMPLETE TASK MOVE FUNCTION WITH COMPREHENSIVE DEBUGGING
   const handleTaskMove = async (source, destination) => {
-    const sourceListIndex = parseInt(source.droppableId.replace("subtasks-", ""));
-    const destListIndex = parseInt(destination.droppableId.replace("subtasks-", ""));
-    
+    const sourceListIndex = parseInt(
+      source.droppableId.replace("subtasks-", "")
+    );
+    const destListIndex = parseInt(
+      destination.droppableId.replace("subtasks-", "")
+    );
+
     const sourceListId = listIdMapping[sourceListIndex];
     const destListId = listIdMapping[destListIndex];
 
-    console.log('🔄 DRAG DEBUG - Starting task move:', {
+    console.log("🔄 DRAG DEBUG - Starting task move:", {
       sourceListIndex,
       destListIndex,
       sourceListId,
       destListId,
       sourceIndex: source.index,
-      destIndex: destination.index
+      destIndex: destination.index,
     });
 
     if (!sourceListId || !destListId) {
-      console.error('❌ Could not find list IDs:', { sourceListId, destListId });
-      alert('Error: Could not find list IDs. Please refresh and try again.');
+      console.error("❌ Could not find list IDs:", {
+        sourceListId,
+        destListId,
+      });
+      alert("Error: Could not find list IDs. Please refresh and try again.");
       return;
     }
 
@@ -165,105 +178,116 @@ export default function TodoListsPage() {
     const taskToMove = sourceTasks[source.index];
 
     if (!taskToMove) {
-      console.error('❌ Task not found at index:', source.index);
-      alert('Error: Task not found.');
+      console.error("❌ Task not found at index:", source.index);
+      alert("Error: Task not found.");
       return;
     }
 
-    console.log('📋 Task to move:', {
+    console.log("📋 Task to move:", {
       taskId: taskToMove.id,
       taskName: taskToMove.name,
       fromList: lists[sourceListIndex],
-      toList: lists[destListIndex]
+      toList: lists[destListIndex],
     });
 
     // Store original state for rollback
     const originalSubtasks = { ...subtasks };
 
     // Update local state immediately for better UX
-    setSubtasks(prev => {
+    setSubtasks((prev) => {
       const newSubtasks = { ...prev };
-      
+
       // Remove from source list
       const newSourceTasks = [...(prev[sourceListIndex] || [])];
       newSourceTasks.splice(source.index, 1);
       newSubtasks[sourceListIndex] = newSourceTasks;
-      
+
       // Add to destination list
       const newDestTasks = [...(prev[destListIndex] || [])];
       newDestTasks.splice(destination.index, 0, taskToMove);
       newSubtasks[destListIndex] = newDestTasks;
-      
-      console.log('🔄 Local state updated');
+
+      console.log("🔄 Local state updated");
       return newSubtasks;
     });
 
     try {
       // If moving between different lists, update the task's list in backend
       if (sourceListIndex !== destListIndex) {
-        console.log('📡 Making API call to update task listId...');
-        
-        const updateData = { 
-          listId: destListId  // This should match your backend field expectation
+        console.log("📡 Making API call to update task listId...");
+
+        const updateData = {
+          listId: destListId, // This should match your backend field expectation
         };
-        
-        console.log('📤 Sending update data:', updateData);
-        console.log('📤 To endpoint: PUT /api/tasks/' + taskToMove.id);
-        
+
+        console.log("📤 Sending update data:", updateData);
+        console.log("📤 To endpoint: PUT /api/tasks/" + taskToMove.id);
+
         const response = await tasksAPI.update(taskToMove.id, updateData);
-        
-        console.log('📥 Backend response:', response.data);
-        
+
+        console.log("📥 Backend response:", response.data);
+
         if (response.data.success) {
-          console.log('✅ Task listId updated successfully in database');
-          console.log('✅ Updated task data:', response.data.data);
+          console.log("✅ Task listId updated successfully in database");
+          console.log("✅ Updated task data:", response.data.data);
         } else {
-          throw new Error('Backend returned success: false');
+          throw new Error("Backend returned success: false");
         }
 
         // Verify the update worked by checking the task in the new list
         setTimeout(async () => {
           try {
-            console.log('🔍 Verifying task move...');
+            console.log("🔍 Verifying task move...");
             const verifyResponse = await tasksAPI.getByList(destListId);
-            const movedTask = verifyResponse.data.data.find(t => t._id === taskToMove.id);
-            
+            const movedTask = verifyResponse.data.data.find(
+              (t) => t._id === taskToMove.id
+            );
+
             if (movedTask) {
-              console.log('✅ Verification successful - Task found in new list');
-              console.log('✅ Task list field:', movedTask.list);
+              console.log(
+                "✅ Verification successful - Task found in new list"
+              );
+              console.log("✅ Task list field:", movedTask.list);
             } else {
-              console.log('❌ Verification failed - Task not found in new list');
+              console.log(
+                "❌ Verification failed - Task not found in new list"
+              );
             }
           } catch (verifyError) {
-            console.log('❌ Verification request failed:', verifyError);
+            console.log("❌ Verification request failed:", verifyError);
           }
         }, 1000);
-
       } else {
-        console.log('🔄 Task moved within same list - no backend update needed');
+        console.log(
+          "🔄 Task moved within same list - no backend update needed"
+        );
       }
 
-      console.log(`🎉 Task "${taskToMove.name}" successfully moved from "${lists[sourceListIndex]}" to "${lists[destListIndex]}"`);
-
+      console.log(
+        `🎉 Task "${taskToMove.name}" successfully moved from "${lists[sourceListIndex]}" to "${lists[destListIndex]}"`
+      );
     } catch (error) {
-      console.error('❌ Error moving task:', error);
-      console.error('❌ Error details:', {
+      console.error("❌ Error moving task:", error);
+      console.error("❌ Error details:", {
         message: error.message,
         response: error.response?.data,
-        status: error.response?.status
+        status: error.response?.status,
       });
 
       // Revert local state on error
-      console.log('🔄 Reverting local state due to error...');
+      console.log("🔄 Reverting local state due to error...");
       setSubtasks(originalSubtasks);
-      
+
       // Show user-friendly error message
-      const errorMessage = error.response?.data?.error || error.message || 'Unknown error occurred';
+      const errorMessage =
+        error.response?.data?.error ||
+        error.message ||
+        "Unknown error occurred";
       alert(`Failed to move task: ${errorMessage}`);
-      
+
       // Optional: Refresh data from server to ensure consistency
       setTimeout(() => {
-        console.log('🔄 Refreshing data from server...');
+        console.log("🔄 Refreshing data from server...");
         fetchLists();
       }, 1000);
     }
@@ -280,7 +304,8 @@ export default function TodoListsPage() {
       sourceGlobalIndex >= lists.length ||
       destGlobalIndex < 0 ||
       destGlobalIndex >= lists.length
-    ) return;
+    )
+      return;
 
     // Update local state only (no backend call for now)
     const reorderedLists = Array.from(lists);
@@ -290,7 +315,7 @@ export default function TodoListsPage() {
     // Update subtasks mapping
     const newSubtasks = {};
     const newListIdMapping = {};
-    
+
     Object.keys(subtasks).forEach((key) => {
       const oldIndex = parseInt(key);
       let newIndex = oldIndex;
@@ -319,37 +344,41 @@ export default function TodoListsPage() {
     setSubtasks(newSubtasks);
     setListIdMapping(newListIdMapping);
 
-    console.log('Lists reordered locally');
+    console.log("Lists reordered locally");
   };
 
   // Real API calls for CRUD operations
   const addList = async () => {
     if (newListName.trim()) {
       try {
-        const response = await listsAPI.create({ 
+        const response = await listsAPI.create({
           name: newListName.trim(),
-          color: '#334155'
+          color: "#334155",
         });
 
         const newList = response.data.data;
 
         // Update local state
-        setLists(prev => [...prev, newList.name]);
-        setSubtasks(prev => ({ ...prev, [lists.length]: [] }));
-        
+        setLists((prev) => [...prev, newList.name]);
+        setSubtasks((prev) => ({ ...prev, [lists.length]: [] }));
+
         // Update ID mapping
-        setListIdMapping(prev => ({
+        setListIdMapping((prev) => ({
           ...prev,
-          [lists.length]: newList._id
+          [lists.length]: newList._id,
         }));
 
         setNewListName("");
         setShowAddModal(false);
 
-        console.log('List created successfully:', newList.name);
+        console.log("List created successfully:", newList.name);
       } catch (error) {
-        console.error('Error creating list:', error);
-        alert(`Failed to create list: ${error.response?.data?.error || error.message}`);
+        console.error("Error creating list:", error);
+        alert(
+          `Failed to create list: ${
+            error.response?.data?.error || error.message
+          }`
+        );
       }
     }
   };
@@ -359,9 +388,9 @@ export default function TodoListsPage() {
       try {
         // Get the actual list ID from our mapping
         const actualListId = listIdMapping[currentListIndex];
-        
+
         if (!actualListId) {
-          alert('Error: Could not find list ID. Please refresh and try again.');
+          alert("Error: Could not find list ID. Please refresh and try again.");
           return;
         }
 
@@ -369,14 +398,14 @@ export default function TodoListsPage() {
           name: newSubtaskName.trim(),
           listId: actualListId,
           deadline: newSubtaskDeadline || null,
-          priority: 'medium'
+          priority: "medium",
         };
 
         const response = await tasksAPI.create(taskData);
         const newTask = response.data.data;
 
         // Add to local state immediately for better UX
-        setSubtasks(prev => ({
+        setSubtasks((prev) => ({
           ...prev,
           [currentListIndex]: [
             ...(prev[currentListIndex] || []),
@@ -385,9 +414,9 @@ export default function TodoListsPage() {
               name: newTask.name,
               completed: newTask.completed,
               deadline: newTask.deadline,
-              createdAt: newTask.createdAt
-            }
-          ]
+              createdAt: newTask.createdAt,
+            },
+          ],
         }));
 
         // Clear form and close modal
@@ -396,10 +425,14 @@ export default function TodoListsPage() {
         setShowSubtaskModal(false);
         setCurrentListIndex(null);
 
-        console.log('Task created successfully:', newTask);
+        console.log("Task created successfully:", newTask);
       } catch (error) {
-        console.error('Error creating task:', error);
-        alert(`Failed to create task: ${error.response?.data?.error || error.message}`);
+        console.error("Error creating task:", error);
+        alert(
+          `Failed to create task: ${
+            error.response?.data?.error || error.message
+          }`
+        );
       }
     }
   };
@@ -407,9 +440,9 @@ export default function TodoListsPage() {
   const handleDeleteList = async (index, name) => {
     try {
       const actualListId = listIdMapping[index];
-      
+
       if (!actualListId) {
-        alert('Error: Could not find list ID. Please refresh and try again.');
+        alert("Error: Could not find list ID. Please refresh and try again.");
         return;
       }
 
@@ -437,9 +470,9 @@ export default function TodoListsPage() {
       });
 
       // Update ID mapping
-      setListIdMapping(prev => {
+      setListIdMapping((prev) => {
         const newMapping = {};
-        Object.keys(prev).forEach(key => {
+        Object.keys(prev).forEach((key) => {
           const oldIndex = parseInt(key);
           if (oldIndex < index) {
             newMapping[oldIndex] = prev[oldIndex];
@@ -450,15 +483,22 @@ export default function TodoListsPage() {
         return newMapping;
       });
 
-      setLastDeleted({ name, index, subtasks: deletedListSubtasks, listId: actualListId });
+      setLastDeleted({
+        name,
+        index,
+        subtasks: deletedListSubtasks,
+        listId: actualListId,
+      });
 
       clearTimeout(undoTimeoutRef.current);
       undoTimeoutRef.current = setTimeout(() => setLastDeleted(null), 5000);
 
-      console.log('List deleted successfully:', name);
+      console.log("List deleted successfully:", name);
     } catch (error) {
-      console.error('Error deleting list:', error);
-      alert(`Failed to delete list: ${error.response?.data?.error || error.message}`);
+      console.error("Error deleting list:", error);
+      alert(
+        `Failed to delete list: ${error.response?.data?.error || error.message}`
+      );
     }
   };
 
@@ -474,9 +514,9 @@ export default function TodoListsPage() {
     if (lastDeleted) {
       try {
         // Recreate the list in the backend
-        const response = await listsAPI.create({ 
+        const response = await listsAPI.create({
           name: lastDeleted.name,
-          color: '#334155'
+          color: "#334155",
         });
 
         const restoredList = response.data.data;
@@ -503,9 +543,9 @@ export default function TodoListsPage() {
         });
 
         // Update ID mapping
-        setListIdMapping(prev => {
+        setListIdMapping((prev) => {
           const newMapping = {};
-          Object.keys(prev).forEach(key => {
+          Object.keys(prev).forEach((key) => {
             const currentIndex = parseInt(key);
             if (currentIndex < index) {
               newMapping[currentIndex] = prev[currentIndex];
@@ -520,10 +560,10 @@ export default function TodoListsPage() {
         setLastDeleted(null);
         clearTimeout(undoTimeoutRef.current);
 
-        console.log('List restored successfully:', name);
+        console.log("List restored successfully:", name);
       } catch (error) {
-        console.error('Error restoring list:', error);
-        alert('Failed to restore list. Please try again.');
+        console.error("Error restoring list:", error);
+        alert("Failed to restore list. Please try again.");
       }
     }
   };
@@ -539,36 +579,36 @@ export default function TodoListsPage() {
           name: subtask.name,
           listId: actualListId,
           deadline: subtask.deadline,
-          priority: 'medium'
+          priority: "medium",
         };
 
         const response = await tasksAPI.create(taskData);
         const restoredTask = response.data.data;
 
         // Update local state
-        setSubtasks(prev => {
+        setSubtasks((prev) => {
           const currentSubtasks = [...(prev[listIndex] || [])];
           currentSubtasks.splice(originalIndex, 0, {
             id: restoredTask._id,
             name: restoredTask.name,
             completed: restoredTask.completed,
             deadline: restoredTask.deadline,
-            createdAt: restoredTask.createdAt
+            createdAt: restoredTask.createdAt,
           });
-          
+
           return {
             ...prev,
-            [listIndex]: currentSubtasks
+            [listIndex]: currentSubtasks,
           };
         });
 
         setLastDeletedSubtask(null);
         clearTimeout(subtaskUndoTimeoutRef.current);
 
-        console.log('Task restored successfully:', restoredTask.name);
+        console.log("Task restored successfully:", restoredTask.name);
       } catch (error) {
-        console.error('Error restoring task:', error);
-        alert('Failed to restore task. Please try again.');
+        console.error("Error restoring task:", error);
+        alert("Failed to restore task. Please try again.");
       }
     }
   };
@@ -595,10 +635,13 @@ export default function TodoListsPage() {
           ) || [],
       }));
 
-      console.log(`Task ${updatedTask.completed ? 'completed' : 'uncompleted'}:`, updatedTask.name);
+      console.log(
+        `Task ${updatedTask.completed ? "completed" : "uncompleted"}:`,
+        updatedTask.name
+      );
     } catch (error) {
-      console.error('Error toggling task completion:', error);
-      alert('Failed to update task. Please try again.');
+      console.error("Error toggling task completion:", error);
+      alert("Failed to update task. Please try again.");
     }
   };
 
@@ -610,11 +653,15 @@ export default function TodoListsPage() {
 
       // Get the task details before deletion for undo functionality
       const currentSubtasks = subtasks[listIndex] || [];
-      const subtaskToDelete = currentSubtasks.find(subtask => subtask.id === subtaskId);
-      const originalIndex = currentSubtasks.findIndex(subtask => subtask.id === subtaskId);
-      
+      const subtaskToDelete = currentSubtasks.find(
+        (subtask) => subtask.id === subtaskId
+      );
+      const originalIndex = currentSubtasks.findIndex(
+        (subtask) => subtask.id === subtaskId
+      );
+
       if (!subtaskToDelete) {
-        alert('Task not found');
+        alert("Task not found");
         return;
       }
 
@@ -624,7 +671,9 @@ export default function TodoListsPage() {
       // Update local state
       setSubtasks((prev) => ({
         ...prev,
-        [listIndex]: currentSubtasks.filter((subtask) => subtask.id !== subtaskId),
+        [listIndex]: currentSubtasks.filter(
+          (subtask) => subtask.id !== subtaskId
+        ),
       }));
 
       // Set up undo functionality
@@ -632,7 +681,7 @@ export default function TodoListsPage() {
         subtask: subtaskToDelete,
         listIndex: listIndex,
         originalIndex: originalIndex,
-        listName: lists[listIndex]
+        listName: lists[listIndex],
       });
 
       clearTimeout(subtaskUndoTimeoutRef.current);
@@ -640,10 +689,10 @@ export default function TodoListsPage() {
         setLastDeletedSubtask(null);
       }, 5000);
 
-      console.log('Task deleted successfully:', subtaskToDelete.name);
+      console.log("Task deleted successfully:", subtaskToDelete.name);
     } catch (error) {
-      console.error('Error deleting task:', error);
-      alert('Failed to delete task. Please try again.');
+      console.error("Error deleting task:", error);
+      alert("Failed to delete task. Please try again.");
     }
   };
 
@@ -660,9 +709,9 @@ export default function TodoListsPage() {
       setDirection(page > currentPage ? 1 : -1);
       setCurrentPage(page);
     }
-    
+
     setSelectedListIndex(listIndex);
-    
+
     clearTimeout(highlightTimeoutRef.current);
     highlightTimeoutRef.current = setTimeout(() => {
       setSelectedListIndex(null);
@@ -777,8 +826,12 @@ export default function TodoListsPage() {
       {/* Keyboard shortcuts help text */}
       <div className="px-6 pb-2">
         <p className="text-xs text-gray-400">
-          Shortcuts: <kbd className="bg-gray-700 px-1 rounded">Ctrl + N</kbd> Add List, 
-          <kbd className="bg-gray-700 px-1 rounded ml-1">Ctrl + Shift + Backspace</kbd> Delete Hovered List
+          Shortcuts: <kbd className="bg-gray-700 px-1 rounded">Ctrl + N</kbd>{" "}
+          Add List,
+          <kbd className="bg-gray-700 px-1 rounded ml-1">
+            Ctrl + Shift + Backspace
+          </kbd>{" "}
+          Delete Hovered List
         </p>
       </div>
 
@@ -945,7 +998,10 @@ export default function TodoListsPage() {
             transition={{ duration: 0.4 }}
             className="fixed bottom-6 right-6 bg-[#1e293b] text-white px-6 py-3 rounded-full shadow-xl z-50 flex items-center gap-4"
           >
-            <span>Task "{lastDeletedSubtask.subtask.name}" deleted from "{lastDeletedSubtask.listName}".</span>
+            <span>
+              Task "{lastDeletedSubtask.subtask.name}" deleted from "
+              {lastDeletedSubtask.listName}".
+            </span>
             <button
               onClick={handleUndoSubtask}
               className="underline text-blue-400 hover:text-purple-400 font-semibold"
