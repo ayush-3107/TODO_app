@@ -6,6 +6,7 @@ import TodoList from "../components/TodoList";
 import { AddListModal, AddTaskModal, DeleteModal } from "../components/Modals";
 import { UndoSnackbar } from "../components/UI";
 import SearchBar from "../components/SearchBar/SearchBar";
+import { ProfileIcon, ProfilePage } from "../components/Profile"; // NEW: Import Profile components
 
 const dummyLists = [
   "Study for exams",
@@ -18,14 +19,15 @@ const dummyLists = [
   "Organize files",
 ];
 
-export default function TodoListsPage() {
+export default function TodoListsPage({ user, onLogout }) { // NEW: Accept user and onLogout props
   const [lists, setLists] = useState(dummyLists);
   const [subtasks, setSubtasks] = useState({});
   const [currentPage, setCurrentPage] = useState(0);
   const [selectedIndex, setSelectedIndex] = useState(null);
   const [direction, setDirection] = useState(0);
   const [selectedListIndex, setSelectedListIndex] = useState(null);
-  const [hoveredListIndex, setHoveredListIndex] = useState(null); // NEW: Track hovered list
+  const [hoveredListIndex, setHoveredListIndex] = useState(null);
+  const [showProfile, setShowProfile] = useState(false); // NEW: Profile state
 
   // Modal states
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -48,7 +50,14 @@ export default function TodoListsPage() {
   const startIndex = currentPage * listsPerPage;
   const visibleLists = lists.slice(startIndex, startIndex + listsPerPage);
 
-  // NEW: Keyboard shortcuts handler
+  // NEW: Profile handlers
+  const handleChangePassword = (oldPassword, newPassword) => {
+    // Here you would call your API to change password
+    console.log('Password change requested:', { oldPassword, newPassword });
+    alert('Password changed successfully!');
+  };
+
+  // Keyboard shortcuts handler
   useEffect(() => {
     const handleKeyDown = (event) => {
       // Ctrl + N: Add new list
@@ -56,7 +65,7 @@ export default function TodoListsPage() {
         event.preventDefault();
         setShowAddModal(true);
       }
-
+      
       // Ctrl + Shift + Backspace: Delete hovered list
       if (event.ctrlKey && event.shiftKey && event.key === 'Backspace') {
         event.preventDefault();
@@ -69,16 +78,10 @@ export default function TodoListsPage() {
       }
     };
 
-    // Add event listener to document
     document.addEventListener('keydown', handleKeyDown);
-
-    // Cleanup event listener
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-    };
+    return () => document.removeEventListener('keydown', handleKeyDown);
   }, [hoveredListIndex, lists]);
 
-  // NEW: Handle list hover
   const handleListHover = (listIndex) => {
     setHoveredListIndex(listIndex);
   };
@@ -102,7 +105,7 @@ export default function TodoListsPage() {
     }, 2000);
   };
 
-  // Drag and drop handlers (keeping existing code)
+  // ... (keep all your existing functions: onDragEnd, handleListReorder, handleSubtaskMove, etc.)
   const onDragEnd = (result) => {
     const { destination, source, type } = result;
 
@@ -190,7 +193,6 @@ export default function TodoListsPage() {
     setSubtasks(newSubtasks);
   };
 
-  // List operations
   const addList = () => {
     if (newListName.trim()) {
       setLists((prev) => [...prev, newListName.trim()]);
@@ -278,7 +280,6 @@ export default function TodoListsPage() {
     }
   };
 
-  // Subtask operations
   const handleAddTask = (listIndex) => {
     setCurrentListIndex(listIndex);
     setShowSubtaskModal(true);
@@ -348,7 +349,6 @@ export default function TodoListsPage() {
     });
   };
 
-  // Navigation
   const changePage = (newPage) => {
     if (newPage >= 0 && newPage < totalPages) {
       setDirection(newPage > currentPage ? 1 : -1);
@@ -365,10 +365,13 @@ export default function TodoListsPage() {
 
   return (
     <div className="min-h-screen bg-[#0f172a] text-white flex flex-col relative">
-      {/* Header with SearchBar */}
+      {/* UPDATED: Header with Profile Icon */}
       <div className="flex justify-between items-center px-6 py-4" style={{ position: 'relative', zIndex: 100000 }}>
-        <h2 className="text-2xl font-bold">Welcome, Username</h2>
-        
+        <div className="flex items-center">
+          <ProfileIcon onClick={() => setShowProfile(true)} />
+          <h2 className="text-2xl font-bold">Welcome, {user?.username || 'User'}</h2>
+        </div>  
+
         <div className="absolute left-1/2 transform -translate-x-1/2" style={{ zIndex: 100000 }}>
           <SearchBar
             lists={lists}
@@ -387,7 +390,14 @@ export default function TodoListsPage() {
         </button>
       </div>
 
-    
+      {/* Keyboard shortcuts help text */}
+      <div className="px-6 pb-2">
+        <p className="text-xs text-gray-400">
+          Shortcuts: <kbd className="bg-gray-700 px-1 rounded">Ctrl + N</kbd> Add List, 
+          <kbd className="bg-gray-700 px-1 rounded ml-1">Ctrl + Shift + Backspace</kbd> Delete Hovered List
+        </p>
+      </div>
+
       {/* Main Content */}
       <div className="flex-1 px-8 flex items-center relative">
         <AnimatePresence custom={direction} mode="wait">
@@ -432,7 +442,7 @@ export default function TodoListsPage() {
                         (task) => task.completed
                       ).length;
                       const isHighlighted = selectedListIndex === globalIndex;
-                      const isHovered = hoveredListIndex === globalIndex; // NEW: Check if hovered
+                      const isHovered = hoveredListIndex === globalIndex;
 
                       return (
                         <TodoList
@@ -447,9 +457,9 @@ export default function TodoListsPage() {
                           onToggleSubtaskComplete={toggleSubtaskComplete}
                           onDeleteSubtask={deleteSubtask}
                           isHighlighted={isHighlighted}
-                          isHovered={isHovered} // NEW: Pass hover state
-                          onHover={handleListHover} // NEW: Pass hover handler
-                          onLeave={handleListLeave} // NEW: Pass leave handler
+                          isHovered={isHovered}
+                          onHover={handleListHover}
+                          onLeave={handleListLeave}
                         />
                       );
                     })}
@@ -522,14 +532,23 @@ export default function TodoListsPage() {
         onAdd={addSubtask}
       />
 
-      {/* List Undo Snackbar */}
+      {/* NEW: Profile Page */}
+      {showProfile && user &&(
+        <ProfilePage
+          user={user}
+          onClose={() => setShowProfile(false)}
+          onChangePassword={handleChangePassword}
+          onLogout={onLogout}
+        />
+      )}
+
+      {/* Undo Snackbars */}
       <UndoSnackbar
         isVisible={!!lastDeleted}
         deletedItemName={lastDeleted?.name}
         onUndo={handleUndo}
       />
 
-      {/* Subtask Undo Snackbar */}
       <AnimatePresence>
         {lastDeletedSubtask && (
           <motion.div

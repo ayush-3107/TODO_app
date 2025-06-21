@@ -1,4 +1,5 @@
 import { motion } from "framer-motion";
+import { useEffect } from "react";
 
 const DeleteModal = ({ 
   isOpen, 
@@ -6,6 +7,29 @@ const DeleteModal = ({
   onConfirm, 
   itemName 
 }) => {
+  // Add keyboard event handler
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        onConfirm();
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+      }
+    };
+
+    // Add event listener when modal is open
+    document.addEventListener('keydown', handleKeyDown);
+
+    // Cleanup event listener when modal closes
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen, onConfirm, onClose]);
+
   if (!isOpen) return null;
 
   return (
@@ -20,6 +44,7 @@ const DeleteModal = ({
         <h3 className="text-xl font-bold mb-4">
           Delete "{itemName}"?
         </h3>
+        
         <div className="flex justify-end gap-4">
           <button
             onClick={onClose}
