@@ -9,11 +9,17 @@ require('./models');
 const app = express();
 connectDB();
 
-// Middleware
+// 1. Middleware first
 app.use(cors());
 app.use(express.json());
 
-// Routes
+// 2. Then routes
+app.use('/api/ai', require('./routes/ai'));
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/lists', require('./routes/lists'));
+app.use('/api/tasks', require('./routes/tasks'));
+
+// 3. Other routes and handlers
 app.get('/', (req, res) => {
   res.json({ 
     message: 'Todo Backend API is running!',
@@ -21,6 +27,12 @@ app.get('/', (req, res) => {
     version: '1.0.0'
   });
 });
+
+app.get('/api/test', (req, res) => {
+  console.log('Proxy test route hit!');
+  res.json({ msg: 'Proxy working!' });
+});
+
 
 app.get('/health', (req, res) => {
   res.json({
@@ -31,16 +43,12 @@ app.get('/health', (req, res) => {
   });
 });
 
-app.use('/api/auth', require('./routes/auth'));
-app.use('/api/lists', require('./routes/lists'));
-app.use('/api/tasks', require('./routes/tasks'));
-
-// ✅ Correct 404 handler — tested and confirmed working
+// 404 handler
 app.use((req, res) => {
   res.status(404).json({ error: 'Route not found' });
 });
 
-// ✅ Correct global error handler
+// Global error handler
 app.use((error, req, res, next) => {
   console.error('Global error handler:', error);
   res.status(500).json({ error: 'Something went wrong!' });

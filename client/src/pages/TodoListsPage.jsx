@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { DragDropContext, Droppable } from "@hello-pangea/dnd";
+import axios from "axios";
 
 import TodoList from "../components/TodoList";
 import { AddListModal, AddTaskModal, DeleteModal } from "../components/Modals";
@@ -39,6 +40,11 @@ export default function TodoListsPage() {
   const [currentListIndex, setCurrentListIndex] = useState(null);
   const [newSubtaskName, setNewSubtaskName] = useState("");
   const [newSubtaskDeadline, setNewSubtaskDeadline] = useState("");
+
+  // AI summarise modal states
+  const [summary, setSummary] = useState("");
+  const [showSummary, setShowSummary] = useState(false);
+  const [loadingSummary, setLoadingSummary] = useState(false);
 
   const undoTimeoutRef = useRef(null);
   const subtaskUndoTimeoutRef = useRef(null);
@@ -98,8 +104,44 @@ export default function TodoListsPage() {
     }
   };
 
+  // summariser handler
+  const handleSummarise = async () => {
+    setLoadingSummary(true);
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) {
+        setSummary("You must be logged in to use AI summary.");
+        setShowSummary(true);
+        setLoadingSummary(false);
+        return;
+      }
+
+      const res = await axios.post(
+        "http://localhost:5000/api/ai/summarise",
+        { prompt: "Summarize my todo productivity" },
+        {
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          // withCredentials is only needed if your backend uses cookies for auth
+          // withCredentials: true,
+        }
+      );
+      console.log(res);
+      setSummary(res.data.summary || "No summary available.");
+      setShowSummary(true);
+    } catch (e) {
+      console.log(e);
+      setSummary("Failed to generate summary.");
+      setShowSummary(true);
+    }
+    setLoadingSummary(false);
+  };
+
   // Profile handlers
   const handleChangePassword = async (oldPassword, newPassword) => {
+    console.log("Summarise button clicked!");
     try {
       const result = await changePassword({ oldPassword, newPassword });
       if (result.success) {
@@ -911,6 +953,34 @@ export default function TodoListsPage() {
           </motion.div>
         </AnimatePresence>
       </div>
+
+      {/* Summarise Button */}
+      <button
+        onClick={handleSummarise}
+        className="fixed bottom-8 right-8 bg-gradient-to-r from-blue-500 to-purple-500 text-white px-6 py-3 rounded-full shadow-lg z-50"
+      >
+        Summarise
+      </button>
+
+      {/* AI Summary Modal */}
+      {showSummary && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+            <h2 className="text-xl font-bold mb-2 text-gray-900">
+              Your Productivity Summary
+            </h2>
+            <p className="text-gray-800 whitespace-pre-line">
+              {loadingSummary ? "Loading..." : summary}
+            </p>
+            <button
+              className="mt-4 px-4 py-2 bg-blue-600 text-white rounded"
+              onClick={() => setShowSummary(false)}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Navigation */}
       <div className="flex justify-center gap-8 py-4">
