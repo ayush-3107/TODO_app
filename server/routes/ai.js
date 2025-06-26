@@ -41,7 +41,7 @@ router.post('/summarise', auth, async (req, res) => {
     // Build prompt from user's tasks
     console.log(req);
     const tasks = await Task.find({ user: req.user._id });
-    const prompt = `Summarize this todo activity: ${tasks.map(t => t.name).join(', ')}`;
+    const prompt = `Summarize this todo activity in 4 bullet points.Give generalised points showing the dedication of user.: ${tasks.map(t => t.name).join(', ')}`;
     
     const result = await model.generateContent(prompt);
     const response = await result.response;

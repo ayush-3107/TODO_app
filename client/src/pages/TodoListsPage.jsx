@@ -4,7 +4,7 @@ import { DragDropContext, Droppable } from "@hello-pangea/dnd";
 import axios from "axios";
 
 import TodoList from "../components/TodoList";
-import { AddListModal, AddTaskModal, DeleteModal } from "../components/Modals";
+import { AddListModal, AddTaskModal, DeleteModal,SummaryModal } from "../components/Modals";
 import { UndoSnackbar } from "../components/UI";
 import SearchBar from "../components/SearchBar/SearchBar";
 import { ProfileIcon, ProfilePage } from "../components/Profile";
@@ -962,25 +962,7 @@ export default function TodoListsPage() {
         Summarise
       </button>
 
-      {/* AI Summary Modal */}
-      {showSummary && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full">
-            <h2 className="text-xl font-bold mb-2 text-gray-900">
-              Your Productivity Summary
-            </h2>
-            <p className="text-gray-800 whitespace-pre-line">
-              {loadingSummary ? "Loading..." : summary}
-            </p>
-            <button
-              className="mt-4 px-4 py-2 bg-blue-600 text-white rounded"
-              onClick={() => setShowSummary(false)}
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      )}
+      
 
       {/* Navigation */}
       <div className="flex justify-center gap-8 py-4">
@@ -1081,6 +1063,11 @@ export default function TodoListsPage() {
           </motion.div>
         )}
       </AnimatePresence>
+      <SummaryModal
+        isOpen={showSummary}
+        onClose={() => setShowSummary(false)}
+        summary={summary}
+      />
     </div>
   );
 }
